@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Play, Clock, FileText, Sparkles, Link, X, Loader2, CheckCircle, AlertCircle, Languages, MessageSquare } from "lucide-react";
 import { useVideo } from "@/context/VideoContext";
+import { bindVideoToChat } from "@/lib/chat-api";
 
 const parseTimestampToSeconds = (timestamp: string): number => {
   const parts = timestamp.split(':').map(Number);
@@ -21,7 +22,15 @@ const formatDisplayTime = (timestamp: string): string => {
   return timestamp;
 };
 
-export function VideoTimelinePanel() {
+export function VideoTimelinePanel({
+  chatId,
+  userId,
+  onVideoBound,
+}: {
+  chatId: string;
+  userId: string;
+  onVideoBound?: (videoId: string) => void;
+}) {
   const { 
     seekTrigger, 
     jumpToTime, 
@@ -38,15 +47,21 @@ export function VideoTimelinePanel() {
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processStatus, setProcessStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [currentVideoId, setCurrentVideoId] = useState(activeVideoId);
-  const [videoTitle, setVideoTitle] = useState("YouTube Video Player");
+  const [currentVideoId, setCurrentVideoId] = useState<string | null>(activeVideoId);
+  const [videoTitle, setVideoTitle] = useState("Add a video to get started");
   
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // همگام‌سازی videoId با Context
   useEffect(() => {
     setCurrentVideoId(activeVideoId);
+    if (activeVideoId) {
+      setVideoTitle((prev) =>
+        prev === "Add a video to get started"
+          ? `YouTube Video - ${activeVideoId}`
+          : prev
+      );
+    }
   }, [activeVideoId]);
 
   // گوش دادن به درخواست پرش زمان
@@ -121,16 +136,19 @@ export function VideoTimelinePanel() {
         },
         body: JSON.stringify({
           video_url: videoUrl,
-          user_id: "murtaza",
+          user_id: userId,
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
+        await bindVideoToChat(chatId, userId, videoId);
+
         setProcessStatus("success");
         setCurrentVideoId(videoId);
         setActiveVideoId(videoId);
+        onVideoBound?.(videoId);
         setVideoTitle(data.title || `YouTube Video - ${videoId}`);
         
         // پاک کردن تایم‌لاین قبلی
@@ -191,15 +209,25 @@ export function VideoTimelinePanel() {
       <div className="shrink-0 p-5 pb-3">
         <div className="overflow-hidden rounded-2xl border border-slate-700/30 bg-black/50 shadow-2xl shadow-purple-500/10 backdrop-blur-sm">
           <div className="relative aspect-video w-full">
-            <iframe
-              key={currentVideoId}
-              ref={iframeRef}
-              className="absolute inset-0 size-full"
-              src={`https://www.youtube.com/embed/${currentVideoId}?rel=0&modestbranding=1&enablejsapi=1`}
-              title={videoTitle}
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-              allowFullScreen
-            />
+            {currentVideoId ? (
+              <iframe
+                key={currentVideoId}
+                ref={iframeRef}
+                className="absolute inset-0 size-full"
+                src={`https://www.youtube.com/embed/${currentVideoId}?rel=0&modestbranding=1&enablejsapi=1`}
+                title={videoTitle}
+                allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                allowFullScreen
+              />
+            ) : (
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0C1426] text-center px-6">
+                <Languages className="size-8 text-purple-400/50" />
+                <p className="text-sm text-slate-400">No video loaded</p>
+                <p className="text-xs text-slate-500">
+                  Paste a YouTube URL to process and bind it to this chat
+                </p>
+              </div>
+            )}
           </div>
         </div>
 

@@ -7,6 +7,8 @@ import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
 
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://127.0.0.1:8000";
+
 type MessagePart = { type: string; text?: string };
 type IncomingMessage = {
   parts?: MessagePart[];
@@ -39,13 +41,20 @@ function chunkText(text: string, size = 10): string[] {
 
 async function streamResponseText(
   responseText: string,
-  originalMessages?: UIMessage[]
+  originalMessages?: UIMessage[],
+  chatId?: string
 ) {
   const stream = createUIMessageStream({
     originalMessages,
     execute: async ({ writer }) => {
-      const textId = "assistant-response";
+      if (chatId) {
+        writer.write({
+          type: "data-chat-id",
+          data: { chatId },
+        });
+      }
 
+      const textId = "assistant-response";
       writer.write({ type: "text-start", id: textId });
 
       const chunks = chunkText(responseText);
@@ -58,17 +67,24 @@ async function streamResponseText(
     },
   });
 
-  return createUIMessageStreamResponse({ stream });
+  const response = createUIMessageStreamResponse({ stream });
+
+  if (chatId) {
+    response.headers.set("X-Chat-Id", chatId);
+  }
+
+  return response;
 }
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { messages, user_id, video_id, model } = body as {
+    const { messages, user_id, video_id, model, chat_id } = body as {
       messages?: IncomingMessage[];
       user_id?: string;
       video_id?: string | null;
       model?: string;
+      chat_id?: string;
     };
 
     const query = getQueryFromMessages(messages ?? []);
@@ -80,7 +96,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const fastApiResponse = await fetch("http://127.0.0.1:8000/api/chat", {
+    if (!chat_id) {
+      return NextResponse.json(
+        { error: "chat_id is required." },
+        { status: 400 }
+      );
+    }
+
+    const fastApiResponse = await fetch(`${BACKEND_URL}/api/chat`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -89,7 +112,7 @@ export async function POST(req: Request) {
         query,
         user_id,
         video_id,
-        model,
+        chat_id,
       }),
     });
 
@@ -101,10 +124,18 @@ export async function POST(req: Request) {
       );
     }
 
-    const data = await fastApiResponse.json();
+    const data = (await fastApiResponse.json()) as {
+      response?: string;
+      chat_id?: string;
+    };
     const responseText = data.response ?? "";
+    const chatId = data.chat_id;
 
-    return streamResponseText(responseText, messages as UIMessage[] | undefined);
+    return streamResponseText(
+      responseText,
+      messages as UIMessage[] | undefined,
+      chatId
+    );
   } catch (error) {
     console.error("Chat proxy route error:", error);
     return NextResponse.json(

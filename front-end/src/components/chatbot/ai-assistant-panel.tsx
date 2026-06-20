@@ -7,7 +7,6 @@ import { jsonrepair } from "jsonrepair";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   MessageSquare,
-  Clock,
   Sparkles,
   Send,
   Copy,
@@ -26,6 +25,13 @@ import {
 } from "@/components/ai-elements/conversation";
 import { MessageResponse } from "@/components/ai-elements/message";
 import { getMessageText } from "@/lib/mock-data";
+import {
+  splitContentAndSources,
+  extractTimestampChips,
+  parseTimelineFromResponse,
+  parseVideoSummaryTakeaways,
+  parseTimestampToSeconds,
+} from "@/lib/chat-timeline";
 import { useVideo } from "@/context/VideoContext";
 
 interface VideoSummaryData {
@@ -42,50 +48,11 @@ const models = [
 
 type QuestionType = "general" | "about_video";
 
-const parseTimestampToSeconds = (timestamp: string): number => {
-  const parts = timestamp.split(":").map(Number);
-  if (parts.length === 3) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  }
-  if (parts.length === 2) {
-    return parts[0] * 60 + parts[1];
-  }
-  return 0;
-};
-
-const extractTimestamps = (text: string): string[] => {
-  const bracketRegex = /\[((?:\d{1,2}:)?\d{1,2}:\d{2})\]/g;
-  const bracketMatches = [...text.matchAll(bracketRegex)].map((match) => match[1]);
-  const timestampRegex = /(?:\d{1,2}:)?\d{1,2}:\d{2}/g;
-  const matches = text.match(timestampRegex) ?? [];
-  return [...new Set([...bracketMatches, ...matches])];
-};
-
-const isVideoSummary = (content: string) => {
-  const trimmed = content.trim();
-  return trimmed.startsWith("{") && trimmed.includes("key_takeaways");
-};
-
-const splitContentAndSources = (text: string) => {
-  const regex =
-    /(?:\n\s*(?:\*\*منابع\*\*|\*\*Sources\*\*|منابع|Sources)\s*:?\s*\n?)/i;
-  const parts = text.split(regex);
-
-  if (parts.length > 1) {
-    const sources = parts.pop() || "";
-    const main = parts.join("\n").trim();
-    return { main, sources: sources.trim() };
-  }
-  return { main: text, sources: null };
-};
-
 const TimestampPill = memo(function TimestampPill({
   time,
-  text,
   onClick,
 }: {
   time: string;
-  text?: string;
   onClick: (seconds: number) => void;
 }) {
   return (
@@ -96,11 +63,6 @@ const TimestampPill = memo(function TimestampPill({
       aria-label={`Jump to ${time}`}
     >
       <span className="shrink-0 font-mono">[{time}]</span>
-      {text && (
-        <span className="truncate max-w-[200px] text-purple-200/90 font-sans">
-          {text}
-        </span>
-      )}
       <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
     </button>
   );
@@ -148,6 +110,11 @@ function LoadingSkeleton() {
   );
 }
 
+const isVideoSummary = (content: string) => {
+  const trimmed = content.trim();
+  return trimmed.startsWith("{") && trimmed.includes("key_takeaways");
+};
+
 const AssistantContent = memo(function AssistantContent({
   content,
   isStreaming,
@@ -161,6 +128,8 @@ const AssistantContent = memo(function AssistantContent({
     try {
       const repairedJson = jsonrepair(content.trim());
       const parsed = JSON.parse(repairedJson) as VideoSummaryData;
+      const takeaways = parseVideoSummaryTakeaways(repairedJson);
+
       return (
         <div className="flex w-full flex-col gap-4 text-sm">
           <div className="flex items-center gap-2 border-b border-purple-500/20 pb-2 text-xs text-purple-400">
@@ -170,13 +139,12 @@ const AssistantContent = memo(function AssistantContent({
           {parsed.overall_summary && (
             <p className="leading-relaxed text-slate-300">{parsed.overall_summary}</p>
           )}
-          {parsed.key_takeaways && parsed.key_takeaways.length > 0 && (
-            <div className="mt-2 flex flex-col gap-2 items-start"> {/* تغییر به flex-col تا مثل لیستِ کارت‌ها زیر هم مرتب شوند */}
-              {parsed.key_takeaways.map((item, idx) => (
+          {takeaways && takeaways.length > 0 && (
+            <div className="mt-1 flex flex-wrap gap-2">
+              {takeaways.map((item) => (
                 <TimestampPill
-                  key={`${item.timestamp}-${idx}`}
+                  key={item.timestamp}
                   time={item.timestamp}
-                  text={item.point} // پاس دادن سرفصل (مانند introduction of langchain) به دکمه
                   onClick={onJumpToTime}
                 />
               ))}
@@ -190,21 +158,21 @@ const AssistantContent = memo(function AssistantContent({
   }
 
   const { main, sources } = splitContentAndSources(content);
-  const sourceTimestamps = sources ? extractTimestamps(sources) : [];
-  const inlineTimestamps = extractTimestamps(main);
-  const timestamps = [...new Set([...sourceTimestamps, ...inlineTimestamps])];
+  const timestamps = extractTimestampChips(sources ? `${main}\n${sources}` : main);
 
   return (
     <div className="flex w-full flex-col gap-3 text-sm">
-      <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
-        <MessageResponse isAnimating={isStreaming}>{main}</MessageResponse>
-        {isStreaming && (
-          <span
-            className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-purple-400 align-middle"
-            aria-hidden="true"
-          />
-        )}
-      </div>
+      {main && (
+        <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
+          <MessageResponse isAnimating={isStreaming}>{main}</MessageResponse>
+          {isStreaming && (
+            <span
+              className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-purple-400 align-middle"
+              aria-hidden="true"
+            />
+          )}
+        </div>
+      )}
       {timestamps.length > 0 && !isStreaming && (
         <div className="flex flex-wrap items-center gap-2 pt-1">
           {timestamps.map((timestamp) => (
@@ -305,15 +273,48 @@ const UserMessage = memo(function UserMessage({ message }: { message: UIMessage 
   );
 });
 
-export default function ChatPage() {
-  const { jumpToTime, addTimelineItem, addTranscriptLine, activeVideoId } = useVideo();
+interface ChatPageProps {
+  chatId: string;
+  userId: string;
+  boundVideoId?: string | null;
+  onNewChat?: () => void | Promise<void>;
+  initialMessages?: UIMessage[];
+}
+
+export default function ChatPage({
+  chatId,
+  userId,
+  boundVideoId = null,
+  onNewChat,
+  initialMessages = [],
+}: ChatPageProps) {
+  const {
+    jumpToTime,
+    addTimelineItem,
+    addTranscriptLine,
+    activeVideoId,
+    transcriptLines,
+  } = useVideo();
   const [input, setInput] = useState("");
   const [model] = useState(models[0].id);
-  const [questionType, setQuestionType] = useState<QuestionType>("general");
-  const [userId] = useState("murtaza");
+  const [questionType, setQuestionType] = useState<QuestionType>(
+    boundVideoId ? "about_video" : "general"
+  );
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const processedTimelineRef = useRef<Set<string>>(new Set());
+
+  const sessionVideoId = activeVideoId ?? boundVideoId;
+
+  useEffect(() => {
+    processedTimelineRef.current.clear();
+  }, [chatId]);
+
+  useEffect(() => {
+    if (boundVideoId) {
+      setQuestionType("about_video");
+    }
+  }, [boundVideoId]);
 
   const transport = useMemo(
     () =>
@@ -323,16 +324,19 @@ export default function ChatPage() {
           body: {
             messages,
             user_id: userId,
-            video_id: questionType === "general" ? null : activeVideoId,
+            video_id: questionType === "about_video" ? sessionVideoId : null,
             model,
+            chat_id: chatId,
           },
         }),
       }),
-    [userId, activeVideoId, model, questionType]
+    [userId, sessionVideoId, model, questionType, chatId]
   );
 
   const { messages, sendMessage, regenerate, status, setMessages, error } = useChat({
     transport,
+    id: chatId,
+    messages: initialMessages,
   });
 
   const isLoading = status === "submitted" || status === "streaming";
@@ -355,59 +359,31 @@ export default function ChatPage() {
   useEffect(() => {
     if (status === "submitted" || status === "streaming") return;
 
-    const lastMessage = messages[messages.length - 1];
-    if (!lastMessage || lastMessage.role !== "assistant") return;
-    if (processedTimelineRef.current.has(lastMessage.id)) return;
+    for (const message of messages) {
+      if (message.role !== "assistant") continue;
+      if (processedTimelineRef.current.has(message.id)) continue;
 
-    const content = getMessageText(lastMessage);
-    if (!content) return;
+      const content = getMessageText(message);
+      if (!content) continue;
 
-    processedTimelineRef.current.add(lastMessage.id);
+      processedTimelineRef.current.add(message.id);
 
-    // جدا کردن پاسخ به خطوط مختلف برای استخراج موضوع
-    const lines = content.split('\n');
-    const timestamps = extractTimestamps(content);
-
-    timestamps.forEach((timestamp) => {
-      // پیدا کردن خطی که شامل این تایم‌استمپ است
-      const relevantLine = lines.find(line => line.includes(timestamp)) || "";
-      
-      // پاک‌سازی خط از علامت‌های اضافی (مثل بولد شدن، خود زمان، و آیدی ویدیو)
-      let cleanText = relevantLine
-        .replace(/\*\*/g, '') // حذف علامت‌های بولد
-        .replace(/\[.*?\]/g, '') // حذف خود زمان در کروشه
-        .replace(/\(Video ID:.*?\)/gi, '') // حذف Video ID
-        .replace(/Timestamp:/gi, '') // حذف کلمه Timestamp
-        .replace(/^- /, '') // حذف خط تیره در ابتدای لیست‌ها
-        .trim();
-
-      // اگر متنی پیدا نشد، از پیش‌فرض استفاده کن
-      if (!cleanText) cleanText = "AI Reference";
-
-      // ایجاد یک سرفصل کوتاه (مثلاً ۴۵ کاراکتر اول) برای نمایش زیبا در تایم‌لاین
-      const shortTitle = cleanText.length > 45 ? `${cleanText.substring(0, 45)}...` : cleanText;
-
-      // اضافه کردن به تایم‌لاین با عنوان استخراج شده
-      addTimelineItem(timestamp, shortTitle, cleanText);
-      addTranscriptLine(timestamp, cleanText);
-    });
-
-    if (isVideoSummary(content)) {
-      try {
-        const repairedJson = jsonrepair(content.trim());
-        const parsed = JSON.parse(repairedJson) as VideoSummaryData;
-        parsed.key_takeaways?.forEach((item) => {
-          addTimelineItem(
-            item.timestamp,
-            item.point.length > 50 ? `${item.point.substring(0, 50)}...` : item.point,
-            item.point
-          );
+      const summaryTakeaways = parseVideoSummaryTakeaways(content);
+      if (summaryTakeaways) {
+        summaryTakeaways.forEach((entry) => {
+          addTimelineItem(entry.timestamp, entry.title, entry.description);
+          addTranscriptLine(entry.timestamp, entry.description);
         });
-      } catch {
-        // ignore parse errors
+        continue;
       }
+
+      const timelineEntries = parseTimelineFromResponse(content, transcriptLines);
+      timelineEntries.forEach((entry) => {
+        addTimelineItem(entry.timestamp, entry.title, entry.description);
+        addTranscriptLine(entry.timestamp, entry.description);
+      });
     }
-  }, [messages, status, addTimelineItem, addTranscriptLine]);
+  }, [messages, status, addTimelineItem, addTranscriptLine, transcriptLines]);
 
   const handleSubmit = useCallback(
     (event?: React.FormEvent) => {
@@ -427,9 +403,10 @@ export default function ChatPage() {
     }
   };
 
-  const handleClearChat = () => {
+  const handleClearChat = async () => {
     setMessages([]);
     processedTimelineRef.current.clear();
+    await onNewChat?.();
   };
 
   return (
@@ -453,10 +430,11 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => setQuestionType("general")}
-              className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "general"
-                ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
-                : "text-slate-400 hover:text-slate-300"
-                }`}
+              className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
+                questionType === "general"
+                  ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
+                  : "text-slate-400 hover:text-slate-300"
+              }`}
               aria-pressed={questionType === "general"}
             >
               General
@@ -464,10 +442,11 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => setQuestionType("about_video")}
-              className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "about_video"
-                ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
-                : "text-slate-400 hover:text-slate-300"
-                }`}
+              className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
+                questionType === "about_video"
+                  ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
+                  : "text-slate-400 hover:text-slate-300"
+              }`}
               aria-pressed={questionType === "about_video"}
             >
               About Video

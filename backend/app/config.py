@@ -33,6 +33,10 @@ class Settings:
         self.pinecone_api_key = os.getenv("PINECONE_API_KEY", "").strip()
         self.index_name = os.getenv("INDEX_NAME", "").strip()
         self.app_name = os.getenv("APP_NAME", "Video RAG API").strip()
+        self.supabase_url = os.getenv("SUPABASE_URL", "").strip()
+        self.supabase_service_role_key = os.getenv(
+            "SUPABASE_SERVICE_ROLE_KEY", ""
+        ).strip()
 
     def validate_for_ingestion(self) -> None:
         missing = [

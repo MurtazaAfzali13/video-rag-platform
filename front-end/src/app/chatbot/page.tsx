@@ -1,18 +1,18 @@
+"use client";
 
-import { ChatHistorySidebar } from "@/components/chatbot/chat-history-sidebar";
-import { VideoTimelinePanel } from "@/components/chatbot/video-timeline-panel";
-import ChatPage from "@/components/chatbot/ai-assistant-panel";
-import { VideoProvider } from "@/context/VideoContext";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 
-export default function ChatbotPage() {
+export default function ChatbotRedirectPage() {
+  const router = useRouter();
+
+  useEffect(() => {
+    router.replace("/chat");
+  }, [router]);
+
   return (
-
-    <main className="flex h-screen w-full overflow-hidden text-slate-200">
-      <VideoProvider>
-        <ChatHistorySidebar />
-        <VideoTimelinePanel />
-        <ChatPage />
-      </VideoProvider>
+    <main className="flex h-screen w-full items-center justify-center bg-[#050816] text-slate-400">
+      Redirecting…
     </main>
   );
 }

@@ -1,9 +1,7 @@
-// src/context/VideoContext.tsx
 "use client";
 
-import { createContext, useContext, useState, ReactNode, useCallback } from "react";
+import { createContext, useContext, useState, ReactNode, useCallback, useEffect } from "react";
 
-// تایپ برای آیتم تایم‌لاین
 export interface TimelineItem {
   id: string;
   time: string;
@@ -11,18 +9,16 @@ export interface TimelineItem {
   description?: string;
 }
 
-// تایپ برای خط ترنسکریپت
 export interface TranscriptLine {
   time: string;
   text: string;
 }
 
 interface VideoContextType {
-  activeVideoId: string;
-  setActiveVideoId: (id: string) => void;
+  activeVideoId: string | null;
+  setActiveVideoId: (id: string | null) => void;
   seekTrigger: { time: number; serial: number } | null;
   jumpToTime: (seconds: number) => void;
-  // داده‌های تایم‌لاین
   timelineItems: TimelineItem[];
   transcriptLines: TranscriptLine[];
   addTimelineItem: (time: string, title: string, description?: string) => void;
@@ -34,36 +30,55 @@ interface VideoContextType {
 
 const VideoContext = createContext<VideoContextType | undefined>(undefined);
 
-export function VideoProvider({ children }: { children: ReactNode }) {
-  const [activeVideoId, setActiveVideoId] = useState("aywZrzNaKjs");
+export function VideoProvider({
+  children,
+  initialVideoId = null,
+}: {
+  children: ReactNode;
+  initialVideoId?: string | null;
+}) {
+  const [activeVideoId, setActiveVideoId] = useState<string | null>(initialVideoId);
   const [seekTrigger, setSeekTrigger] = useState<{ time: number; serial: number } | null>(null);
-  
-  // داده‌های تایم‌لاین
   const [timelineItems, setTimelineItems] = useState<TimelineItem[]>([]);
   const [transcriptLines, setTranscriptLines] = useState<TranscriptLine[]>([]);
   const [activeTimestampId, setActiveTimestampId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setActiveVideoId(initialVideoId ?? null);
+  }, [initialVideoId]);
 
   const jumpToTime = useCallback((seconds: number) => {
     setSeekTrigger({ time: seconds, serial: Date.now() });
   }, []);
 
   const addTimelineItem = useCallback((time: string, title: string, description?: string) => {
-    const newItem: TimelineItem = {
-      id: Date.now().toString(),
-      time,
-      title,
-      description,
-    };
-    setTimelineItems(prev => {
-      // بررسی نکنیم که قبلاً وجود دارد یا نه
-      return [...prev, newItem];
+    setTimelineItems((prev) => {
+      const existingIndex = prev.findIndex((item) => item.time === time);
+      if (existingIndex >= 0) {
+        const updated = [...prev];
+        updated[existingIndex] = {
+          ...updated[existingIndex],
+          title,
+          description: description ?? updated[existingIndex].description,
+        };
+        return updated;
+      }
+
+      return [
+        ...prev,
+        {
+          id: `${time}-${Date.now()}`,
+          time,
+          title,
+          description,
+        },
+      ];
     });
   }, []);
 
   const addTranscriptLine = useCallback((time: string, text: string) => {
-    setTranscriptLines(prev => {
-      // بررسی نکنیم که تکراری نباشد
-      const exists = prev.some(line => line.time === time && line.text === text);
+    setTranscriptLines((prev) => {
+      const exists = prev.some((line) => line.time === time && line.text === text);
       if (exists) return prev;
       return [...prev, { time, text }];
     });
@@ -76,19 +91,21 @@ export function VideoProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <VideoContext.Provider value={{
-      activeVideoId,
-      setActiveVideoId,
-      seekTrigger,
-      jumpToTime,
-      timelineItems,
-      transcriptLines,
-      addTimelineItem,
-      addTranscriptLine,
-      clearTimeline,
-      activeTimestampId,
-      setActiveTimestampId,
-    }}>
+    <VideoContext.Provider
+      value={{
+        activeVideoId,
+        setActiveVideoId,
+        seekTrigger,
+        jumpToTime,
+        timelineItems,
+        transcriptLines,
+        addTimelineItem,
+        addTranscriptLine,
+        clearTimeline,
+        activeTimestampId,
+        setActiveTimestampId,
+      }}
+    >
       {children}
     </VideoContext.Provider>
   );
