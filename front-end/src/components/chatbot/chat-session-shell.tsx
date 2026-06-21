@@ -8,7 +8,7 @@ import { VideoTimelinePanel } from "@/components/chatbot/video-timeline-panel";
 import ChatPage from "@/components/chatbot/ai-assistant-panel";
 import { VideoProvider } from "@/context/VideoContext";
 import { useChatUserId } from "@/hooks/use-chat-user";
-import { initChat } from "@/lib/chat-api";
+// دیگر نیازی به ایمپورت initChat در اینجا نیست
 
 export interface ChatMetadata {
   id: string;
@@ -33,7 +33,7 @@ function toUiMessages(records: StoredMessage[]): UIMessage[] {
 }
 
 interface ChatSessionShellProps {
-  chatId: string;
+  chatId?: string;
 }
 
 export function ChatSessionShell({ chatId }: ChatSessionShellProps) {
@@ -41,10 +41,21 @@ export function ChatSessionShell({ chatId }: ChatSessionShellProps) {
   const userId = useChatUserId();
   const [initialMessages, setInitialMessages] = useState<UIMessage[]>([]);
   const [boundVideoId, setBoundVideoId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  
+  // اگر chatId وجود داشته باشد، یعنی باید اطلاعات را از سرور بگیریم پس لودینگ true است.
+  // اگر chatId نباشد (چت جدید)، لودینگ از همان ابتدا false است تا صفحه سریع بالا بیاید.
+  const [loading, setLoading] = useState<boolean>(!!chatId);
 
   useEffect(() => {
-    if (!userId || !chatId) return;
+    if (!userId) return;
+
+    // اگر چت جدید است، نیازی به فچ کردن اطلاعات از بک‌اند نیست
+    if (!chatId) {
+      setLoading(false);
+      setBoundVideoId(null);
+      setInitialMessages([]);
+      return;
+    }
 
     let cancelled = false;
 
@@ -53,16 +64,16 @@ export function ChatSessionShell({ chatId }: ChatSessionShellProps) {
 
       try {
         const [metaRes, messagesRes] = await Promise.all([
-          fetch(`/api/chats/${chatId}?user_id=${encodeURIComponent(userId)}`),
+          fetch(`/api/chats/${chatId}?user_id=${encodeURIComponent(userId!)}`),
           fetch(
-            `/api/chats/${chatId}/messages?user_id=${encodeURIComponent(userId)}`
+            `/api/chats/${chatId}/messages?user_id=${encodeURIComponent(userId!)}`
           ),
         ]);
 
         if (!metaRes.ok) {
           if (!cancelled) {
-            const newId = await initChat(userId);
-            router.replace(`/chat/${newId}`);
+            // اگر آیدی چت نامعتبر بود، به جای ساختن چت جدید در دیتابیس، او را به صفحه چت خالی هدایت می‌کنیم
+            router.replace("/chat");
           }
           return;
         }
@@ -99,11 +110,10 @@ export function ChatSessionShell({ chatId }: ChatSessionShellProps) {
     setBoundVideoId(videoId);
   }, []);
 
-  const handleNewChat = useCallback(async () => {
-    if (!userId) return;
-    const newId = await initChat(userId);
-    router.push(`/chat/${newId}`);
-  }, [userId, router]);
+  const handleNewChat = useCallback(() => {
+    // مستقیماً به روت اصلی چت هدایت می‌کنیم تا فرم خاموش/جدید نمایش داده شود
+    router.push("/chat");
+  }, [router]);
 
   if (!userId) {
     return (

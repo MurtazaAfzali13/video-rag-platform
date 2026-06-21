@@ -1,13 +1,14 @@
-// app/api/process-video/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { video_url, user_id } = body;
+    // دریافت chat_id از بدنه درخواست
+    const { video_url, user_id, chat_id } = body; 
 
     const backendUrl = process.env.BACKEND_API_URL || 'http://localhost:8000';
     
+    // ارسال پارامترها به بک‌اند اصلی
     const response = await fetch(`${backendUrl}/api/process-video`, {
       method: 'POST',
       headers: {
@@ -16,6 +17,7 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         video_url,
         user_id,
+        chat_id, // <--- ارسال به بک‌اند پایتون برای ذخیره در دیتابیس
       }),
     });
 

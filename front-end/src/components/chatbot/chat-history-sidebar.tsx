@@ -6,7 +6,8 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Plus, MessageSquare, Settings, LogOut, Loader2 } from "lucide-react";
-import { initChat } from "@/lib/chat-api";
+
+import Loading from "../Loading";
 
 interface ChatSummary {
   id: string;
@@ -57,16 +58,15 @@ export function ChatHistorySidebar({
 
   const handleNewChat = async () => {
     if (creating) return;
+
     setCreating(true);
+
     try {
       if (onNewChat) {
         await onNewChat();
       } else {
-        const chatId = await initChat(userId);
-        router.push(`/chat/${chatId}`);
+        router.push("/chat/new");
       }
-    } catch (error) {
-      console.error("Failed to create chat:", error);
     } finally {
       setCreating(false);
     }
@@ -76,13 +76,23 @@ export function ChatHistorySidebar({
     let cancelled = false;
 
     async function loadChats() {
+      // تغییر مهم 1: فقط زمانی loading را true کن که هیچ دیتایی از قبل نداریم
+      // این کار جلوی چشمک زدن UI هنگام جابجایی بین چت ها را می گیرد
+      if (chats.length === 0) setLoading(true); 
+
       try {
         const response = await fetch(
           `/api/chats?user_id=${encodeURIComponent(userId)}`
         );
         const data = (await response.json()) as ChatSummary[];
+
         if (!cancelled && response.ok) {
-          setChats(data);
+          // تغییر مهم 2: بهبود فیلتر برای حل مشکل لیست شدن چندین "New Chat" (عکس اول)
+          // استفاده از trim و toLowerCase برای اطمینان از حذف اسپم ها
+          const validChats = data.filter(
+            chat => chat.title?.trim().toLowerCase() !== "new chat" || chat.id === activeChatId
+          );
+          setChats(validChats);
         }
       } catch {
         // sidebar falls back to empty state
@@ -95,7 +105,7 @@ export function ChatHistorySidebar({
     return () => {
       cancelled = true;
     };
-  }, [userId, activeChatId]);
+  }, [userId, activeChatId]); // وابستگی‌ها درست هستند، اما با تغییر اول دیگر لودینگ آزاردهنده نخواهیم داشت
 
   const groupedChats = useMemo(() => groupChatsByDate(chats), [chats]);
 
@@ -119,8 +129,9 @@ export function ChatHistorySidebar({
       </div>
 
       <ScrollArea className="custom-scrollbar-sidebar flex-1 px-3 py-4">
-        {loading ? (
-          <p className="px-3 text-xs text-slate-500">Loading chats…</p>
+     
+        {loading && chats.length === 0 ? (
+          <Loading />
         ) : groupedChats.length === 0 ? (
           <p className="px-3 text-xs text-slate-500">No chats yet</p>
         ) : (
@@ -138,16 +149,14 @@ export function ChatHistorySidebar({
                         <button
                           type="button"
                           onClick={() => router.push(`/chat/${chat.id}`)}
-                          className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all duration-200 ${
-                            isActive
-                              ? "border border-purple-500/40 bg-purple-600/15 text-slate-100 shadow-lg shadow-purple-500/10"
-                              : "text-slate-300 hover:border hover:border-purple-500/20 hover:bg-[#101A2E] hover:text-slate-100"
-                          }`}
+                          className={`group relative flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-all duration-200 ${isActive
+                            ? "border border-purple-500/40 bg-purple-600/15 text-slate-100 shadow-lg shadow-purple-500/10"
+                            : "text-slate-300 hover:border hover:border-purple-500/20 hover:bg-[#101A2E] hover:text-slate-100"
+                            }`}
                         >
                           <MessageSquare
-                            className={`size-4 shrink-0 ${
-                              isActive ? "text-purple-300" : "text-purple-400 group-hover:text-purple-300"
-                            }`}
+                            className={`size-4 shrink-0 ${isActive ? "text-purple-300" : "text-purple-400 group-hover:text-purple-300"
+                              }`}
                           />
                           <span className="flex-1 truncate text-[13px] font-medium">
                             {chat.title}

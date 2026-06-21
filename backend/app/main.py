@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import asyncio
@@ -43,11 +41,13 @@ logger = logging.getLogger(__name__)
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
     user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
+    chat_id: Optional[str] = Field(None, description="Existing chat session UUID. If null, a new chat is created.")
 
 
 class ProcessVideoResponse(BaseModel):
     status: str
     video_id: str
+    chat_id: str  # این فیلد اضافه شد تا آیدی چت به فرانت‌اند برگردد
     chunks_processed: int
     message: str
 
@@ -55,18 +55,10 @@ class ProcessVideoResponse(BaseModel):
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The user's question")
     user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
-    chat_id: str = Field(..., min_length=1, description="Existing chat session UUID")
+    chat_id: Optional[str] = Field(None, description="Existing chat session UUID")
     video_id: Optional[str] = Field(
         None, description="YouTube video ID for video-scoped RAG (null = multi-video search)"
     )
-
-
-class InitChatRequest(BaseModel):
-    user_id: str = Field(..., min_length=1)
-
-
-class InitChatResponse(BaseModel):
-    chat_id: str
 
 
 class UpdateChatRequest(BaseModel):
@@ -112,8 +104,6 @@ async def lifespan(app: FastAPI):
     yield
 
 
-
-
 def create_app() -> FastAPI:
     settings = get_settings()
 
@@ -151,13 +141,31 @@ def create_app() -> FastAPI:
             )
 
         try:
+            # 1. گرفتن زیرنویس
             transcript = await asyncio.to_thread(fetch_transcript, video_id)
+            
+            # 2. پردازش و ذخیره در Pinecone
             chunks_processed = await asyncio.to_thread(
                 process_and_ingest_video,
                 transcript,
                 video_id,
                 request.user_id,
             )
+            
+            # 3. بررسی و ایجاد چت جدید در صورت خالی بودن chat_id
+            target_chat_id = request.chat_id
+            if not target_chat_id:
+                new_chat = await asyncio.to_thread(init_chat, request.user_id)
+                target_chat_id = new_chat["id"]
+
+            # 4. ذخیره video_id در دیتابیس برای این چت خاص
+            await asyncio.to_thread(
+                update_chat_video_id,
+                target_chat_id,
+                request.user_id,
+                video_id,
+            )
+            
         except YouTubeTranscriptApiException as exc:
             if is_invalid_video_id(exc):
                 raise HTTPException(
@@ -182,6 +190,8 @@ def create_app() -> FastAPI:
                 status_code=502,
                 detail="دریافت زیرنویس از یوتیوب با خطا مواجه شد.",
             ) from exc
+        except ChatStoreError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         except ValueError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         except Exception as exc:
@@ -194,17 +204,10 @@ def create_app() -> FastAPI:
         return ProcessVideoResponse(
             status="success",
             video_id=video_id,
+            chat_id=target_chat_id,
             chunks_processed=chunks_processed,
-            message="ویدیو با موفقیت پردازش و در دیتابیس ذخیره شد.",
+            message="ویدیو با موفقیت پردازش و به چت متصل شد.",
         )
-
-    @app.post("/api/chats/init", response_model=InitChatResponse)
-    async def init_chat_session(request: InitChatRequest) -> InitChatResponse:
-        try:
-            chat = await asyncio.to_thread(init_chat, request.user_id)
-            return InitChatResponse(chat_id=chat["id"])
-        except ChatStoreError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @app.get("/api/chats", response_model=list[ChatSummary])
     async def get_user_chats(
@@ -274,23 +277,32 @@ def create_app() -> FastAPI:
     @app.post("/api/chat", response_model=ChatResponse)
     async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         try:
-            existing = await asyncio.to_thread(
-                get_chat, request.chat_id, request.user_id
-            )
-            if not existing:
-                raise HTTPException(status_code=404, detail="Chat not found.")
+            target_chat_id = request.chat_id
+            chat_title = "New Chat"
 
-            if existing.get("title") == "New Chat":
+            # تولید چت جدید در صورت خالی بودن chat_id
+            if not target_chat_id:
+                new_chat = await asyncio.to_thread(init_chat, request.user_id)
+                target_chat_id = new_chat["id"]
+            else:
+                existing = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
+                if not existing:
+                    raise HTTPException(status_code=404, detail="Chat not found.")
+                chat_title = existing.get("title", "New Chat")
+
+            # تغییر عنوان چت فقط در صورتی که هنوز "New Chat" باشد
+            if chat_title == "New Chat":
                 await asyncio.to_thread(
                     update_chat_title,
-                    request.chat_id,
+                    target_chat_id,
                     request.user_id,
                     derive_chat_title(request.query),
                 )
 
+            # ذخیره پیام کاربر
             await asyncio.to_thread(
                 save_message,
-                chat_id=request.chat_id,
+                chat_id=target_chat_id,
                 role="user",
                 content=request.query,
             )
@@ -310,14 +322,15 @@ def create_app() -> FastAPI:
 
             assistant_response = result["response"]
 
+            # ذخیره پیام دستیار
             await asyncio.to_thread(
                 save_message,
-                chat_id=request.chat_id,
+                chat_id=target_chat_id,
                 role="assistant",
                 content=assistant_response,
             )
 
-            return ChatResponse(response=assistant_response, chat_id=request.chat_id)
+            return ChatResponse(response=assistant_response, chat_id=target_chat_id)
 
         except HTTPException:
             raise
@@ -333,9 +346,6 @@ def create_app() -> FastAPI:
                 status_code=500,
                 detail=f"خطای سرور در جریان هوش مصنوعی: {str(exc)}",
             ) from exc
-            
-        
-        
 
     return app
 

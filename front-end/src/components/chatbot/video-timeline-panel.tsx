@@ -1,7 +1,7 @@
-// src/components/chatbot/video-timeline-panel.tsx
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { useRouter } from "next/navigation"; // اضافه شدن روتر
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { cn } from "@/lib/utils";
 import { Play, Clock, FileText, Sparkles, Link, X, Loader2, CheckCircle, AlertCircle, Languages, MessageSquare } from "lucide-react";
@@ -27,14 +27,15 @@ export function VideoTimelinePanel({
   userId,
   onVideoBound,
 }: {
-  chatId: string;
+  chatId?: string;
   userId: string;
   onVideoBound?: (videoId: string) => void;
 }) {
-  const { 
-    seekTrigger, 
-    jumpToTime, 
-    activeVideoId, 
+  const router = useRouter(); // تعریف روتر برای تغییر آدرس بعد از ساخت چت
+  const {
+    seekTrigger,
+    jumpToTime,
+    activeVideoId,
     setActiveVideoId,
     timelineItems,
     transcriptLines,
@@ -42,14 +43,14 @@ export function VideoTimelinePanel({
     setActiveTimestampId,
     clearTimeline
   } = useVideo();
-  
+
   const [videoUrl, setVideoUrl] = useState("");
   const [showUrlInput, setShowUrlInput] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processStatus, setProcessStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(activeVideoId);
   const [videoTitle, setVideoTitle] = useState("Add a video to get started");
-  
+
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -68,7 +69,7 @@ export function VideoTimelinePanel({
   useEffect(() => {
     if (seekTrigger && iframeRef.current) {
       const timeInSeconds = seekTrigger.time;
-      
+
       const iframe = iframeRef.current;
       if (iframe && iframe.contentWindow) {
         iframe.contentWindow.postMessage(
@@ -80,13 +81,13 @@ export function VideoTimelinePanel({
           '*'
         );
       }
-      
+
       // هایلایت کردن آیتم مرتبط در تایم‌لاین
       const matchingItem = timelineItems.find(item => {
         const itemSeconds = parseTimestampToSeconds(item.time);
         return Math.abs(itemSeconds - timeInSeconds) < 30;
       });
-      
+
       if (matchingItem) {
         setActiveTimestampId(matchingItem.id);
       }
@@ -129,6 +130,9 @@ export function VideoTimelinePanel({
     setProcessStatus("loading");
 
     try {
+      // اگر در مسیر /chat/new هستیم، باید null بفرستیم تا بک‌اند چت را بسازد
+      const actualChatId = (chatId === "new" || !chatId) ? null : chatId;
+
       const response = await fetch("/api/process-video", {
         method: "POST",
         headers: {
@@ -137,21 +141,19 @@ export function VideoTimelinePanel({
         body: JSON.stringify({
           video_url: videoUrl,
           user_id: userId,
+          chat_id: actualChatId, 
         }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
-        await bindVideoToChat(chatId, userId, videoId);
-
         setProcessStatus("success");
         setCurrentVideoId(videoId);
         setActiveVideoId(videoId);
         onVideoBound?.(videoId);
         setVideoTitle(data.title || `YouTube Video - ${videoId}`);
-        
-        // پاک کردن تایم‌لاین قبلی
+
         clearTimeline();
 
         setTimeout(() => {
@@ -159,6 +161,16 @@ export function VideoTimelinePanel({
           setVideoUrl("");
           setProcessStatus("idle");
         }, 2000);
+
+        // مهم: اگر بک‌اند یک چت جدید ساخت و آیدی آن با آیدی فعلی (مثلا "new") فرق داشت
+        // کاربر را به آدرس جدید (بدون رفرش شدن صفحه) هدایت کن
+        if (data.chat_id && data.chat_id !== chatId) {
+          router.replace(`/chat/${data.chat_id}`);
+        } else if (actualChatId) {
+          // اگر از قبل چت وجود داشت، فقط ویدیو را در کلاینت به آن متصل کن
+          await bindVideoToChat(actualChatId, userId, videoId);
+        }
+
       } else {
         setProcessStatus("error");
         setTimeout(() => setProcessStatus("idle"), 3000);
@@ -380,7 +392,7 @@ export function VideoTimelinePanel({
                       >
                         {formatDisplayTime(item.time)}
                       </span>
-                      
+
                       <div className="flex-1 min-w-0">
                         <p className="text-sm text-slate-300 group-hover:text-slate-200 transition-colors">
                           {item.title}

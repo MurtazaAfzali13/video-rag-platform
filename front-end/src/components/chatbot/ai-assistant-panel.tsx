@@ -274,7 +274,7 @@ const UserMessage = memo(function UserMessage({ message }: { message: UIMessage 
 });
 
 interface ChatPageProps {
-  chatId: string;
+  chatId?: string;
   userId: string;
   boundVideoId?: string | null;
   onNewChat?: () => void | Promise<void>;
