@@ -71,6 +71,7 @@ def create_chat(
 
 
 def get_chat(chat_id: str, user_id: str) -> Optional[dict[str, Any]]:
+    """Get a single chat by ID and user_id."""
     with httpx.Client(timeout=30.0) as client:
         response = client.get(
             f"{_base_url()}/rest/v1/chats",
@@ -91,6 +92,7 @@ def get_chat(chat_id: str, user_id: str) -> Optional[dict[str, Any]]:
 
 
 def list_chats(user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
+    """List all chats for a user."""
     with httpx.Client(timeout=30.0) as client:
         response = client.get(
             f"{_base_url()}/rest/v1/chats",
@@ -115,6 +117,7 @@ def save_message(
     role: str,
     content: str,
 ) -> dict[str, Any]:
+    """Save a message to a chat."""
     payload = {
         "id": str(uuid.uuid4()),
         "chat_id": chat_id,
@@ -139,6 +142,7 @@ def save_message(
 
 
 def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
+    """List all messages for a chat."""
     with httpx.Client(timeout=30.0) as client:
         response = client.get(
             f"{_base_url()}/rest/v1/messages",
@@ -158,18 +162,61 @@ def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
 
 
 def derive_chat_title(query: str) -> str:
+    """Derive a chat title from the first user query."""
     cleaned = " ".join(query.strip().split())
     if len(cleaned) <= 60:
         return cleaned or "New Chat"
     return f"{cleaned[:57]}..."
 
 
-def init_chat(user_id: str) -> dict[str, Any]:
-    """Create an empty chat session eagerly (before first message or video)."""
-    return create_chat(user_id=user_id, title="New Chat", video_id=None)
+def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Chat") -> dict[str, Any]:
+    """
+    Initialize a new chat or return existing one.
+    
+    Args:
+        user_id: The user ID
+        chat_id: Optional chat ID (if not provided, generates a new one)
+        title: Chat title (default: "New Chat")
+    
+    Returns:
+        The chat object
+    """
+    target_id = chat_id if chat_id else str(uuid.uuid4())
+    
+    # First check if chat exists
+    existing = get_chat(target_id, user_id)
+    if existing:
+        return existing
+    
+    # Create new chat
+    payload = {
+        "id": target_id,
+        "user_id": user_id,
+        "title": title[:120] or "New Chat",
+        "video_id": None,
+        "created_at": _now_iso(),
+    }
+
+    with httpx.Client(timeout=30.0) as client:
+        response = client.post(
+            f"{_base_url()}/rest/v1/chats",
+            headers=_headers(get_settings().supabase_service_role_key),
+            json=payload,
+        )
+
+    if response.status_code >= 400:
+        # اگر خطا به دلیل تکراری بودن آیدی بود (قبلاً ایجاد شده)، از آن صرف‌نظر می‌کنیم
+        if response.status_code == 409:
+            return get_chat(target_id, user_id) or payload
+        logger.error("Failed to init chat: %s", response.text)
+        raise ChatStoreError(response.text)
+
+    rows = response.json()
+    return rows[0] if isinstance(rows, list) and rows else payload
 
 
 def update_chat_video_id(chat_id: str, user_id: str, video_id: str) -> dict[str, Any]:
+    """Update the video_id associated with a chat."""
     with httpx.Client(timeout=30.0) as client:
         response = client.patch(
             f"{_base_url()}/rest/v1/chats",
@@ -190,6 +237,7 @@ def update_chat_video_id(chat_id: str, user_id: str, video_id: str) -> dict[str,
 
 
 def update_chat_title(chat_id: str, user_id: str, title: str) -> dict[str, Any]:
+    """Update the title of a chat."""
     with httpx.Client(timeout=30.0) as client:
         response = client.patch(
             f"{_base_url()}/rest/v1/chats",

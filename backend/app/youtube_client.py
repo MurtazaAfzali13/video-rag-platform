@@ -23,7 +23,6 @@ YOUTUBE_VIDEO_ID_PATTERN = re.compile(
 )
 
 PREFERRED_LANGUAGES = ("en", "fa")
-_transcript_api = YouTubeTranscriptApi()
 
 
 def extract_video_id(url: str) -> str | None:
@@ -32,13 +31,21 @@ def extract_video_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
-def fetch_transcript(video_id: str) -> list[dict[str, Any]]:
+def fetch_transcript(
+    video_id: str, 
+    proxies: dict[str, str] | None = None
+) -> list[dict[str, Any]]:
     """
     Fetch captions for a video (English or Persian preferred).
-
     Returns raw transcript entries: [{"text": "...", "start": 0.0, "duration": ...}, ...]
     """
-    fetched = _transcript_api.fetch(video_id, languages=list(PREFERRED_LANGUAGES))
+    # استفاده از متد fetch دقیقا مشابه کدهای قدیمی شما که به درستی کار می‌کرد
+    if proxies:
+        api = YouTubeTranscriptApi(proxies=proxies)
+    else:
+        api = YouTubeTranscriptApi()
+        
+    fetched = api.fetch(video_id, languages=list(PREFERRED_LANGUAGES))
     return fetched.to_raw_data()
 
 

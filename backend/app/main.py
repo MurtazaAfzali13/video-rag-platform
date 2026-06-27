@@ -41,13 +41,12 @@ logger = logging.getLogger(__name__)
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
     user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
-    chat_id: Optional[str] = Field(None, description="Existing chat session UUID. If null, a new chat is created.")
-
+    chat_id: str = Field(..., min_length=1, description="Mandatory client-generated UUID for the session")
 
 class ProcessVideoResponse(BaseModel):
     status: str
     video_id: str
-    chat_id: str  # این فیلد اضافه شد تا آیدی چت به فرانت‌اند برگردد
+    chat_id: str
     chunks_processed: int
     message: str
 
@@ -55,7 +54,7 @@ class ProcessVideoResponse(BaseModel):
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The user's question")
     user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
-    chat_id: Optional[str] = Field(None, description="Existing chat session UUID")
+    chat_id: str = Field(..., min_length=1, description="Mandatory existing or new chat session UUID from client")
     video_id: Optional[str] = Field(
         None, description="YouTube video ID for video-scoped RAG (null = multi-video search)"
     )
@@ -141,10 +140,19 @@ def create_app() -> FastAPI:
             )
 
         try:
-            # 1. گرفتن زیرنویس
-            transcript = await asyncio.to_thread(fetch_transcript, video_id)
+            # تنظیم پروکسی در صورت وجود در تنظیمات سیستم (برای جلوگیری از بلاک شدن)
+            # فرض بر این است که fetch_transcript آپدیت شده و proxies را می‌پذیرد
+            my_proxies = None
+            if hasattr(settings, 'proxy_url') and settings.proxy_url:
+                my_proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
+
+            # دریافت کپشن یا زیرنویس ویدیو
+            if my_proxies:
+                transcript = await asyncio.to_thread(fetch_transcript, video_id, proxies=my_proxies)
+            else:
+                transcript = await asyncio.to_thread(fetch_transcript, video_id)
             
-            # 2. پردازش و ذخیره در Pinecone
+            # پردازش متون و درج در پایگاه داده برداری Pinecone
             chunks_processed = await asyncio.to_thread(
                 process_and_ingest_video,
                 transcript,
@@ -152,13 +160,17 @@ def create_app() -> FastAPI:
                 request.user_id,
             )
             
-            # 3. بررسی و ایجاد چت جدید در صورت خالی بودن chat_id
+            # ثبت چت با استفاده از آیدی دریافتی از فرانت‌اند
             target_chat_id = request.chat_id
-            if not target_chat_id:
-                new_chat = await asyncio.to_thread(init_chat, request.user_id)
-                target_chat_id = new_chat["id"]
+            
+            # بررسی وجود چت قبل از ایجاد
+            existing_chat = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
+            
+            # اگر چت وجود نداشت، آن را ایجاد می‌کنیم
+            if not existing_chat:
+                await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "Video Chat")
 
-            # 4. ذخیره video_id در دیتابیس برای این چت خاص
+            # اتصال محکم شناسه ویدیو به چت
             await asyncio.to_thread(
                 update_chat_video_id,
                 target_chat_id,
@@ -167,39 +179,23 @@ def create_app() -> FastAPI:
             )
             
         except YouTubeTranscriptApiException as exc:
-            if is_invalid_video_id(exc):
-                raise HTTPException(
-                    status_code=400,
-                    detail="شناسه ویدیو نامعتبر است.",
-                ) from exc
-            if is_transcript_not_found(exc):
-                raise HTTPException(
-                    status_code=404,
-                    detail="زیرنویس برای این ویدیو یافت نشد.",
-                ) from exc
+            logger.error(f"Failed to fetch transcript for video {video_id}: {exc}")
+            # تفکیک خطاهای یوتیوب برای ارائه پیام مناسب‌تر به کلاینت
             if is_transcript_blocked(exc):
-                raise HTTPException(
-                    status_code=503,
-                    detail=(
-                        "یوتیوب درخواست را مسدود کرده است. "
-                        "لطفاً بعداً دوباره تلاش کنید یا از IP دیگری استفاده کنید."
-                    ),
-                ) from exc
-            logger.exception("YouTube transcript error for %s", video_id)
-            raise HTTPException(
-                status_code=502,
-                detail="دریافت زیرنویس از یوتیوب با خطا مواجه شد.",
-            ) from exc
+                raise HTTPException(status_code=429, detail="آی‌پی سرور توسط یوتیوب مسدود شده است. لطفاً بعداً تلاش کنید.") from exc
+            elif is_transcript_not_found(exc):
+                raise HTTPException(status_code=404, detail="هیچ زیرنویسی (فارسی یا انگلیسی) برای این ویدیو یافت نشد.") from exc
+            elif is_invalid_video_id(exc):
+                raise HTTPException(status_code=400, detail="شناسه ویدیو نامعتبر است.") from exc
+            else:
+                raise HTTPException(status_code=400, detail="خطا در دریافت زیرنویس این ویدیو.") from exc
+
         except ChatStoreError as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except ValueError as exc:
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.error(f"Chat store error for video {video_id}: {exc}")
+            raise HTTPException(status_code=503, detail=f"خطا در ذخیره‌سازی چت: {str(exc)}") from exc
         except Exception as exc:
             logger.exception("Failed to process video %s", video_id)
-            raise HTTPException(
-                status_code=500,
-                detail=f"خطای سرور: {exc}",
-            ) from exc
+            raise HTTPException(status_code=500, detail=f"خطای سرور: {str(exc)}") from exc
 
         return ProcessVideoResponse(
             status="success",
@@ -278,25 +274,25 @@ def create_app() -> FastAPI:
     async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         try:
             target_chat_id = request.chat_id
-            chat_title = "New Chat"
-
-            # تولید چت جدید در صورت خالی بودن chat_id
-            if not target_chat_id:
-                new_chat = await asyncio.to_thread(init_chat, request.user_id)
-                target_chat_id = new_chat["id"]
+            
+            # بررسی وجود چت در دیتابیس
+            existing = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
+            
+            # اگر چت از قبل وجود نداشت، آن را با همان آیدی فرانت‌اند می‌سازیم
+            if not existing:
+                await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "New Chat")
+                chat_title = "New Chat"
             else:
-                existing = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
-                if not existing:
-                    raise HTTPException(status_code=404, detail="Chat not found.")
                 chat_title = existing.get("title", "New Chat")
 
             # تغییر عنوان چت فقط در صورتی که هنوز "New Chat" باشد
             if chat_title == "New Chat":
+                new_title = derive_chat_title(request.query)
                 await asyncio.to_thread(
                     update_chat_title,
                     target_chat_id,
                     request.user_id,
-                    derive_chat_title(request.query),
+                    new_title,
                 )
 
             # ذخیره پیام کاربر
@@ -307,6 +303,7 @@ def create_app() -> FastAPI:
                 content=request.query,
             )
 
+            # آماده‌سازی state برای LangGraph
             initial_state = {
                 "messages": [HumanMessage(content=request.query)],
                 "query": request.query,
@@ -315,6 +312,7 @@ def create_app() -> FastAPI:
                 "response": None,
             }
 
+            # اجرای LangGraph workflow
             result = await asyncio.to_thread(get_agent_graph().invoke, initial_state)
 
             if not result or "response" not in result or not result["response"]:
@@ -336,7 +334,7 @@ def create_app() -> FastAPI:
             raise
         except ChatStoreError as exc:
             logger.exception("Chat persistence error for user %s", request.user_id)
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
+            raise HTTPException(status_code=503, detail=f"خطا در ذخیره‌سازی پیام: {str(exc)}") from exc
         except Exception as exc:
             logger.exception(
                 "Error occurred during LangGraph workflow execution for user %s",

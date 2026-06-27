@@ -1,15 +1,22 @@
-import { TooltipProvider } from "@/components/ui/tooltip";
+import { auth } from "@clerk/nextjs/server";
+import { redirect } from "next/navigation";
+import { VideoProvider } from "@/context/VideoContext";
+import ChatSidebar from "@/components/chat/ChatSidebar";
 
-export default function ChatbotLayout({
+export default async function ChatbotLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { userId } = await auth();
+  if (!userId) redirect("/sign-in");
+
   return (
-    <div className="fixed inset-x-0 top-20 bottom-0 z-50 overflow-hidden bg-[#0B0F19]">
-      <TooltipProvider>
-        {children}
-      </TooltipProvider>
-    </div>
+    <VideoProvider>
+      <div className="flex h-screen w-full overflow-hidden bg-[#050816]">
+        <ChatSidebar />
+        <main className="flex flex-1 min-w-0 overflow-hidden">{children}</main>
+      </div>
+    </VideoProvider>
   );
 }

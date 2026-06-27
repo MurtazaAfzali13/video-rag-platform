@@ -1,173 +1,98 @@
-# Video RAG Assistant
+# VideoGPT Frontend
 
-An AI-powered platform that allows users to chat with YouTube videos using Retrieval-Augmented Generation (RAG), semantic search, and timestamp-aware responses.
-
-## Overview
-
-Video RAG Assistant is a full-stack AI application that processes YouTube videos, extracts transcripts, stores semantic embeddings in a vector database, and enables natural language conversations with video content.
-
-The system combines modern AI technologies including LangGraph, Pinecone, and Large Language Models (LLMs) to provide accurate, context-aware answers linked to specific timestamps in videos.
-
----
-
-## Features
-
-- User Authentication with Clerk
-- Multi-user Architecture
-- YouTube Transcript Processing
-- Semantic Search with Pinecone
-- Retrieval-Augmented Generation (RAG)
-- LangGraph Workflow Orchestration
-- Timestamp-based Video Navigation
-- Chat History Storage
-- Real-time Streaming Responses
-- Responsive Modern UI
-
----
+A modern, dark-themed AI-powered YouTube video analysis chatbot built with Next.js 14, TypeScript, Tailwind CSS, and Clerk auth.
 
 ## Architecture
 
-User
-↓
-Next.js Frontend
-↓
-FastAPI Backend
-↓
-LangGraph Workflow
-├── Video RAG Pipeline
-│ ├── Pinecone Retrieval
-│ └── LLM Response Generation
-│
-└── Web Search Pipeline
-└── Tavily Search
-
-Database:
-- Supabase PostgreSQL
-
-Vector Database:
-- Pinecone
-
-Authentication:
-- Clerk
-
----
-
-## Tech Stack
-
-### Frontend
-
-- Next.js 15+
-- TypeScript
-- Tailwind CSS
-- shadcn/ui
-- Vercel AI SDK
-
-### Backend
-
-- FastAPI
-- Python
-- LangGraph
-- LangChain
-
-### Databases
-
-- Supabase PostgreSQL
-- Pinecone Vector Database
-
-### Authentication
-
-- Clerk
-
-### Deployment
-
-- Vercel
-- Railway
-
----
-
-## Project Structure
-
-frontend/
+```
+/src
 ├── app/
+│   ├── page.tsx                     # Public landing page (no auth)
+│   ├── layout.tsx                   # Root layout with ClerkProvider
+│   ├── globals.css                  # Dark theme + custom scrollbars
+│   ├── sign-in/[[...sign-in]]/      # Clerk sign-in page
+│   ├── sign-up/[[...sign-up]]/      # Clerk sign-up page
+│   ├── api/
+│   │   └── process-video/route.ts   # Next.js proxy → FastAPI backend
+│   └── chatbot/
+│       ├── layout.tsx               # Protected layout with sidebar
+│       ├── page.tsx                 # New chat (ChatGPT-style URL input)
+│       └── chat/[chatId]/page.tsx   # Active chat workspace
 ├── components/
-├── hooks/
+│   ├── landing/                     # Hero, Features, HowItWorks, Pricing
+│   ├── chat/
+│   │   ├── ChatSidebar.tsx          # Left sidebar with history
+│   │   └── ChatInterface.tsx        # Right chat panel with messages
+│   ├── video/
+│   │   └── VideoTimelinePanel.tsx   # Left video + timeline panel
+│   └── ui/tabs.tsx                  # Radix UI Tabs (shadcn-style)
+├── context/VideoContext.tsx         # Video state, seeking, timeline
+├── hooks/useChatUserId.ts           # Clerk user ID hook
 ├── lib/
-└── public/
+│   ├── chat-api.ts                  # API calls to FastAPI backend
+│   └── utils.ts                     # cn(), timestamp parsers
+├── types/index.ts                   # TypeScript interfaces
+└── middleware.ts                    # Clerk: protect /chatbot routes only
+```
 
-backend/
-├── app/
-│ ├── api/
-│ ├── services/
-│ ├── graphs/
-│ ├── models/
-│ └── core/
-│
-└── tests/
+## Setup
 
----
-
-## Installation
-
-### Frontend
+### 1. Install dependencies
 
 ```bash
 npm install
+```
+
+### 2. Environment variables
+
+Copy `.env.local.example` to `.env.local` and fill in:
+
+```bash
+cp .env.local.example .env.local
+```
+
+Required variables:
+- `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` — from Clerk dashboard
+- `CLERK_SECRET_KEY` — from Clerk dashboard
+- `BACKEND_API_URL` — your FastAPI URL (default: `http://localhost:8000`)
+- `NEXT_PUBLIC_BACKEND_URL` — same, for client-side use
+
+### 3. Run development server
+
+```bash
 npm run dev
 ```
 
-### Backend
+Open [http://localhost:3000](http://localhost:3000)
 
-```bash
-poetry install
-poetry run uvicorn app.main:app --reload
-```
+## Key User Flows
 
----
+### Landing Page (`/`)
+- Public access, no auth required
+- Shows Hero, Features, HowItWorks, Pricing
+- CTA buttons redirect to `/chatbot` (which requires auth)
 
-## Environment Variables
+### Chatbot Home (`/chatbot`)
+- **Requires Clerk auth** — unauthenticated users redirected to `/sign-in`
+- ChatGPT-style interface with YouTube URL input
+- On "Process": calls `/api/process-video` → FastAPI → creates chat → redirects to `/chatbot/chat/{chatId}`
 
-Frontend:
+### Chat Workspace (`/chatbot/chat/[chatId]`)
+- Split screen: left = video + timeline, right = chat
+- Left panel: YouTube iframe, Timeline tab, Highlights tab, "New Video" button
+  - Processing a new video **updates** the existing chat's video_id (no new chat created)
+- Right panel: message history, typing indicator, timestamp chips that seek the video
+- Timestamps extracted from AI responses automatically populate the Timeline
 
-```env
-NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=
-CLERK_SECRET_KEY=
-NEXT_PUBLIC_API_URL=
-```
+## Backend API Expected
 
-Backend:
+Your FastAPI at `BACKEND_API_URL` should expose:
 
-```env
-OPENAI_API_KEY=
-PINECONE_API_KEY=
-SUPABASE_URL=
-SUPABASE_KEY=
-TAVILY_API_KEY=
-```
-
----
-
-## Deployment
-
-Frontend is deployed on Vercel.
-
-Backend is deployed on Railway.
-
-Database is hosted on Supabase.
-
-Vector search is powered by Pinecone.
-
----
-
-## Future Improvements
-
-- Video summarization
-- Multi-video knowledge base
-- Voice interaction
-- Agentic workflows
-- Advanced analytics
-
----
-
-## License
-
-MIT License
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/process-video` | Process video, returns `{chat_id, video_id, ...}` |
+| GET | `/api/chats?user_id=` | List user's chats |
+| GET | `/api/chats/{id}?user_id=` | Get chat metadata |
+| PATCH | `/api/chats/{id}` | Update video_id |
+| GET | `/api/chats/{id}/messages?user_id=` | Get messages |
+| POST | `/api/chat` | Send message, returns `{response, chat_id}` |
