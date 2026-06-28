@@ -59,3 +59,7 @@ def get_agent_graph():
     if agent_graph is None:
         agent_graph = create_agent_graph()
     return agent_graph
+
+
+if __name__ == "__main__":
+    print("Inializing graph")

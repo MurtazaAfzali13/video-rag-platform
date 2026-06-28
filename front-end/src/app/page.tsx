@@ -6,7 +6,7 @@ import PricingSection from "@/components/landing/PricingSection";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-black overflow-y-auto">
+    <main className="min-h-screen bg-black">
       <HeroSection />
       <FeaturesSection />
       <HowItWorksSection />
