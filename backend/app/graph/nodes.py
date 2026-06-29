@@ -14,12 +14,11 @@ from app.ingestion import _get_embeddings
 
 logger = logging.getLogger(__name__)
 
-
-def get_llm() -> ChatOpenAI:
-    """Initialize and return the LLM configured via OpenRouter."""
+def get_llm(model_name: str) -> ChatOpenAI:
+    """Initialize and return the LLM configured via OpenRouter based on the requested model."""
     settings = get_settings()
     return ChatOpenAI(
-        model=settings.llm_model,
+        model=model_name,
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
     )
@@ -83,7 +82,10 @@ def supervisor_node(state: AgentState) -> dict[str, Any]:
         ("human", "Query: {query}\nSearch Scope: {search_scope}"),
     ])
     
-    router_chain = prompt | get_llm().with_structured_output(RouteDecision)
+   
+    settings = get_settings()
+    router_chain = prompt | get_llm(settings.supervisor_model).with_structured_output(RouteDecision)
+    
     decision: RouteDecision = router_chain.invoke({
         "query": query, 
         "search_scope": search_scope
@@ -160,7 +162,10 @@ def validator_node(state: AgentState) -> dict[str, Any]:
         ("system", system_prompt),
         ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"),
     ])
-    grader_chain = prompt | get_llm().with_structured_output(GradeDocuments)
+    
+    
+    settings = get_settings()
+    grader_chain = prompt | get_llm(settings.supervisor_model).with_structured_output(GradeDocuments)
     
     result: GradeDocuments = grader_chain.invoke({"query": query, "context": context_text})
     logger.info(f"Validation Score: {result.binary_score} | Reason: {result.explanation}")
@@ -238,7 +243,10 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         ("human", "{query}"),
     ])
     
-    chain = prompt | get_llm() | StrOutputParser()
+    # اصلاح: استفاده از مدل قدرتمند و اصلی برای تولید محتوا
+    settings = get_settings()
+    chain = prompt | get_llm(settings.generator_model) | StrOutputParser()
+    
     response = chain.invoke({"query": query, "context": context_text})
     
     return {"response": response}
@@ -268,7 +276,10 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
         ("human", "{query}"),
     ])
 
-    chain = prompt | get_llm().with_structured_output(VideoSummarySchema)
+    # اصلاح: استفاده از مدل قدرتمند برای تولید خلاصه ساختاریافته آکادمیک
+    settings = get_settings()
+    chain = prompt | get_llm(settings.generator_model).with_structured_output(VideoSummarySchema)
+    
     summary = chain.invoke({"context": context, "query": query})
 
     if isinstance(summary, VideoSummarySchema):

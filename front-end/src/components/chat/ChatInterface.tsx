@@ -210,9 +210,7 @@ const AssistantContent = memo(function AssistantContent({
   );
 });
 
-// ==========================================
-// Main Chat Component
-// ==========================================
+
 
 export default function ChatInterface({
   chatId,
@@ -236,7 +234,6 @@ export default function ChatInterface({
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
 
-  // Adjust Textarea Height
   const adjustTextareaHeight = useCallback(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;

@@ -13,7 +13,10 @@ load_dotenv(ROOT_DIR / ".env")
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 DEFAULT_EMBEDDING_MODEL = "openai/text-embedding-3-small"
-DEFAULT_LLM_MODEL = "openai/gpt-4o-mini"
+
+
+DEFAULT_SUPERVISOR_MODEL = "openai/gpt-4o-mini" 
+DEFAULT_GENERATOR_MODEL = "openai/gpt-4o-mini"   
 
 
 class Settings:
@@ -24,9 +27,15 @@ class Settings:
         self.openrouter_base_url = os.getenv(
             "OPENROUTER_BASE_URL", OPENROUTER_BASE_URL
         ).strip()
-        self.llm_model = os.getenv(
-            "OPENROUTER_LLM_MODEL", DEFAULT_LLM_MODEL
+        
+        # ۱. تفکیک متغیرهای LLM در کلاس Settings
+        self.supervisor_model = os.getenv(
+            "SUPERVISOR_LLM_MODEL", DEFAULT_SUPERVISOR_MODEL
         ).strip()
+        self.generator_model = os.getenv(
+            "GENERATOR_LLM_MODEL", DEFAULT_GENERATOR_MODEL
+        ).strip()
+        
         self.embedding_model = os.getenv(
             "OPENROUTER_EMBEDDING_MODEL", DEFAULT_EMBEDDING_MODEL
         ).strip()
