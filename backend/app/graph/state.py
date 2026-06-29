@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, TypedDict, Optional, List
+from typing import Annotated, TypedDict, Optional, List ,Literal
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -39,4 +39,35 @@ class AgentState(TypedDict):
     query: str
     user_id: str
     video_id: Optional[str]
+    
+    search_scope: Literal["general","single_video"]
+    next_node: Optional[str]
+    
+    documents: Optional[List[dict]]
+    
     response: Optional[str]
+
+
+class RouteDecision(BaseModel):
+    reasoning: str=Field(
+        ..., 
+        description="Briefly explain your reasoning for choosing the intent based on the user query and search_scope."
+    )
+    intent: Literal["video_summary", "video_qa", "general_qa"] = Field(
+        ...,
+        description="The appropriate next step. "
+                    "Choose 'video_summary' if the user asks for a summary/overview. "
+                    "Choose 'video_qa' if the user asks a specific question and search_scope is 'single_video'. "
+                    "Choose 'general_qa' if the search_scope is 'general'."
+    )
+    
+    
+class GradeDocuments(BaseModel):
+    binary_score: Literal["yes", "no"] = Field(
+        ...,
+        description="Documents are relevant to the question? Answer 'yes' if the context contains enough direct facts to answer, otherwise answer 'no'."
+    )
+    explanation: str = Field(
+        ...,
+        description="Briefly explain why the documents are relevant or missing the required information."
+    )
