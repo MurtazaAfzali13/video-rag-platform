@@ -6,39 +6,23 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
+from langchain_community.tools.tavily_search import TavilySearchResults
 
 from app.config import get_settings
-from app.graph.state import AgentState, VideoSummarySchema
+from app.graph.state import AgentState, VideoSummarySchema, RouteDecision, GradeDocuments
 from app.ingestion import _get_embeddings
 
 logger = logging.getLogger(__name__)
 
-SUMMARY_QUERY_TRIGGERS = (
-    "summarize",
-    "summarise",
-    "summary",
-    "overview",
-    "takeaway",
-    "takeaways",
-    "key takeaways",
-    "explain",   
-    "introduce",
-)
-
 
 def get_llm() -> ChatOpenAI:
+    """Initialize and return the LLM configured via OpenRouter."""
     settings = get_settings()
     return ChatOpenAI(
         model=settings.llm_model,
         api_key=settings.openrouter_api_key,
         base_url=settings.openrouter_base_url,
     )
-
-
-def is_summary_request(query: str) -> bool:
-    """Return True when the user query asks for a structured video summary."""
-    query_lower = query.lower().strip()
-    return any(trigger in query_lower for trigger in SUMMARY_QUERY_TRIGGERS)
 
 
 def _fetch_video_context(
@@ -48,7 +32,7 @@ def _fetch_video_context(
     *,
     k: int = 4,
 ) -> str:
-    """Retrieve transcript chunks scoped to a single user namespace and video."""
+    """Helper function to retrieve transcript chunks for structured summaries."""
     settings = get_settings()
 
     vector_store = PineconeVectorStore(
@@ -78,46 +62,197 @@ def _fetch_video_context(
     return "\n\n".join(context_parts)
 
 
-def video_rag_node(state: AgentState) -> dict[str, Any]:
-    """Retrieve and answer questions scoped to the active video via metadata filtering."""
-    logger.info("Entering Video RAG Node...")
+
+def supervisor_node(state: AgentState) -> dict[str, Any]:
+    """Analyze the user's query and UI context to determine the next expert node."""
+    logger.info("Entering Supervisor Agent...")
+    
+    query = state["query"]
+    search_scope = state.get("search_scope", "single_video")
+    
+    system_prompt = (
+        "You are a routing supervisor in an educational AI system.\n"
+        "Your job is to analyze the user's query and the UI context (search_scope) "
+        "to determine which expert agent should handle the request.\n\n"
+        "Search Scope Constraint:\n"
+        "- If search_scope is 'general', you MUST route to 'general_qa' unless it's explicitly a summary request.\n"
+        "- If search_scope is 'single_video', route to 'video_qa' or 'video_summary'."
+    )
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "Query: {query}\nSearch Scope: {search_scope}"),
+    ])
+    
+    router_chain = prompt | get_llm().with_structured_output(RouteDecision)
+    decision: RouteDecision = router_chain.invoke({
+        "query": query, 
+        "search_scope": search_scope
+    }) 
+    
+    logger.info(f"Supervisor Decision: {decision.intent} | Reason: {decision.reasoning}")
+    return {"next_node": decision.intent}
+
+
+
+def retriever_node(state: AgentState) -> dict[str, Any]:
+    """Retrieve transcript chunks from Pinecone based on the supervisor's search scope."""
+    logger.info("Entering Retriever Node...")
     user_id = state["user_id"]
     video_id = state["video_id"]
     query = state["query"]
+    search_scope = state.get("search_scope", "single_video")
+    
+    settings = get_settings()
+    vector_store = PineconeVectorStore(
+        index_name=settings.index_name,
+        embedding=_get_embeddings(),
+        pinecone_api_key=settings.pinecone_api_key,
+        namespace=user_id,
+    )
+    
+    if search_scope == "single_video" and video_id:
+        logger.info(f"Searching strictly inside video: {video_id}")
+        search_kwargs = {
+            "filter": {"video_id": {"$eq": video_id}},
+            "k": 4
+        }
+    else:
+        logger.info("Searching across ALL user videos (General Scope)")
+        search_kwargs = {"k": 5}
+        
+    retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
+    docs = retriever.invoke(query)
+    
+    retrieved_docs = []
+    for doc in docs:
+        retrieved_docs.append({
+            "page_content": doc.page_content,
+            "video_id": doc.metadata.get("video_id", "Unknown"),
+            "title": doc.metadata.get("title") or doc.metadata.get("video_title") or "Unknown Title",
+            "start_time": doc.metadata.get("start_time", 0)
+        })
+        
+    return {"documents": retrieved_docs}
 
-    # گرفتن کانتکست همراه با زمان‌بندی
-    context = _fetch_video_context(user_id, video_id, query, k=4)
 
+
+def validator_node(state: AgentState) -> dict[str, Any]:
+    """Strictly grade the relevance of retrieved documents to prevent hallucination."""
+    logger.info("Entering Validator Node...")
+    query = state["query"]
+    documents = state.get("documents", [])
+    
+    if not documents:
+        logger.warning("No documents found in state. Routing to web_search.")
+        return {"next_node": "web_search"}
+        
+    context_text = "\n\n".join([f"Content: {d['page_content']}" for d in documents])
+    
+    system_prompt = (
+        "You are a strict quality control grader.\n"
+        "Your task is to assess whether the provided video transcript excerpts contain "
+        "explicit, factual, and sufficient information to answer the user's question.\n"
+        "If the context is irrelevant, generic, or lacks the direct answer, you MUST select 'no'.\n"
+        "Do not make assumptions. Be extremely strict."
+    )
+    
     prompt = ChatPromptTemplate.from_messages([
-        ("system", (
-            "You are an advanced AI assistant for analyzing video transcripts.\n\n"
-            "STRICT CONTEXT ENFORCEMENT PROTOCOL:\n"
-            "- Your answer must be based ONLY and EXCLUSIVELY on the factually explicit information provided in the video excerpts below.\n"
-            "- Do NOT use any pre-trained external knowledge, facts, or assumptions outside of the provided text.\n"
-            "- If the provided context is empty, irrelevant, or does not contain the exact and direct answer to the user's question, you MUST respond with exactly this phrase and nothing else: 'متاسفانه پاسخ این سوال در ویدیو پیدا نشد.'\n"
-            "- Do not extrapolate, speculate, or invent any details. If the text does not state it, it is non-existent to you.\n\n"
-            "CRITICAL REQUIREMENT: If you find the answer in the context, you MUST cite the specific times from the context. "
-            "At the very end of your response, you MUST include a clearly formatted 'منابع' (Sources) section "
-            "listing the timestamps used as bullet points.\n\n"
-            "Video excerpts with precise timestamps:\n{context}"
-        )),
+        ("system", system_prompt),
+        ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"),
+    ])
+    grader_chain = prompt | get_llm().with_structured_output(GradeDocuments)
+    
+    result: GradeDocuments = grader_chain.invoke({"query": query, "context": context_text})
+    logger.info(f"Validation Score: {result.binary_score} | Reason: {result.explanation}")
+    
+    if result.binary_score == "yes":
+        return {"next_node": "generator"}  
+    else:
+        return {"next_node": "web_search"} 
+
+
+
+def web_search_node(state: AgentState) -> dict[str, Any]:
+    """Execute a fallback web search when local database resources are insufficient."""
+    logger.info("Entering Web Search Node (Tavily)...")
+    query = state["query"]
+    
+    web_search_tool = TavilySearchResults(max_results=3)
+    docs = web_search_tool.invoke({"query": query})
+    
+    web_results = []
+    for d in docs:
+        web_results.append({
+            "page_content": d["content"],
+            "title": "جستجوی وب",
+            "video_id": d.get("url", "External Web Source"),
+            "start_time": 0
+        })
+    return {"documents": web_results}
+
+
+
+def generate_answer_node(state: AgentState) -> dict[str, Any]:
+    """Synthesize the final grounded response using either validated video snippets or web resources."""
+    logger.info("Entering Generator Node...")
+    query = state["query"]
+    documents = state.get("documents", [])
+    
+    context_parts = []
+    is_web_search = False
+    
+    for i, doc in enumerate(documents, start=1):
+        if "url" in doc.get("video_id", "") or doc.get("title") == "جستجوی وب":
+            is_web_search = True
+            context_parts.append(f"منبع خارجی {i} (وب): {doc['page_content']} | URL: {doc['video_id']}")
+        else:
+            v_id = doc.get("video_id", "Unknown")
+            v_title = doc.get("title", "Unknown Title")
+            start_time = doc.get("start_time", 0)
+            minutes, seconds = int(start_time // 60), int(start_time % 60)
+            context_parts.append(
+                f"ویدیو: {v_title} (ID: {v_id}) - زمان [{minutes:02d}:{seconds:02d}]:\n{doc['page_content']}"
+            )
+            
+    context_text = "\n\n".join(context_parts)
+    
+    transparency_note = ""
+    if is_web_search:
+        transparency_note = (
+            "توجه مهم: اطلاعات مورد نیاز کاربر در ویدیوهای بارگذاری شده یافت نشد. "
+            "بنابراین، این پاسخ بر اساس 'جستجوی وب' تهیه شده است. حتماً این موضوع را در ابتدای پاسخ به کاربر اطلاع دهید.\n\n"
+        )
+        
+    system_prompt = (
+        "You are an expert educational assistant.\n"
+        f"{transparency_note}"
+        "Your task is to answer the user's question using ONLY the provided Context.\n"
+        "RULES:\n"
+        "1. Do not use outside knowledge. If the answer is not in the context, say you don't know.\n"
+        "2. ALWAYS cite your sources at the end of the response (e.g., 'منابع: ویدیو ID فلان، زمان 02:15' or Web URL).\n"
+        "Context:\n{context}"
+    )
+    
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
         ("human", "{query}"),
     ])
-
+    
     chain = prompt | get_llm() | StrOutputParser()
-    response = chain.invoke({"context": context, "query": query})
-
+    response = chain.invoke({"query": query, "context": context_text})
+    
     return {"response": response}
 
 
+
 def video_summary_node(state: AgentState) -> dict[str, Any]:
-    """Generate a structured academic summary of the active video transcript."""
+    """Generate a high-fidelity chronological academic summary of the active video."""
     logger.info("Entering Video Summary Node...")
     user_id = state["user_id"]
     video_id = state["video_id"]
     query = state["query"]
 
-    context = _fetch_video_context(user_id, video_id, query, k=2)
+    context = _fetch_video_context(user_id, video_id, query, k=4)
 
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
@@ -140,67 +275,5 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
         response_json = summary.model_dump_json(indent=2)
     else:
         response_json = json.dumps(summary, indent=2)
-    return {"response": response_json}
-
-
-def multi_video_search_node(state: AgentState) -> dict[str, Any]:
-    """Search across ALL videos belonging to the user inside their Pinecone namespace."""
-    logger.info("Entering Multi-Video Search Node...")
-    user_id = state["user_id"]
-    query = state["query"]
-    settings = get_settings()
-
-    vector_store = PineconeVectorStore(
-        index_name=settings.index_name,
-        embedding=_get_embeddings(),
-        pinecone_api_key=settings.pinecone_api_key,
-        namespace=user_id, 
-    )
-
-    retriever = vector_store.as_retriever(
-        search_kwargs={
-            "k": 5,
-        }
-    )
-    docs = retriever.invoke(query)
-
-    formatted_results_list = []
-    for i, doc in enumerate(docs, start=1):
-        v_id = doc.metadata.get("video_id", "Unknown ID")
-        v_title = doc.metadata.get("title") or doc.metadata.get("video_title") or f"Video ({v_id})"
         
-        start_time = doc.metadata.get("start_time", 0)
-        minutes = int(start_time // 60)
-        seconds = int(start_time % 60)
-        timestamp_str = f"{minutes:02d}:{seconds:02d}"
-
-        formatted_results_list.append(
-            f"منبع {i}:\n"
-            f"عنوان ویدیو: {v_title}\n"
-            f"شناسه ویدیو: {v_id}\n"
-            f"زمان: [{timestamp_str}]\n"
-            f"محتوا: {doc.page_content}"
-        )
-
-    search_results_text = "\n\n".join(formatted_results_list)
-
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", (
-            "You are a highly professional AI learning assistant.\n\n"
-            "ABSOLUTE CONTEXT GROUNDING MANDATE:\n"
-            "- You must prepare an answer based ONLY and EXCLUSIVELY on the Multi-Video Transcripts Context provided below.\n"
-            "- If the provided context does not contain direct facts to answer the query, or if no relevant documents are found in the database, you MUST reply with exactly: 'این اطلاعات در دیتابیس ویدیوهای شما یافت نشد.'\n"
-            "- Under no circumstances are you allowed to use your own background knowledge or create hypothetical answers.\n\n"
-            "CRITICAL REQUIREMENT: If the information is present, you MUST build trust with the user by citing your sources. "
-            "Whenever you state a fact or use information from a video, explicitly mention the 'Video Title' or 'Video ID' and the exact 'Timestamp'.\n"
-            "At the very end of your response, you MUST include a clearly formatted 'منابع' (Sources) section "
-            "listing the unique Video Titles/IDs and Timestamps used as bullet points.\n\n"
-            "Multi-Video Transcripts Context:\n{search_results}"
-        )),
-        ("human", "{query}"),
-    ])
-
-    chain = prompt | get_llm() | StrOutputParser()
-    response = chain.invoke({"search_results": search_results_text, "query": query})
-
-    return {"response": response}
+    return {"response": response_json}

@@ -116,10 +116,11 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # اصلاح باگ تنظیمات همزمان allow_origins="*" و allow_credentials=True
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
+        allow_credentials=False,  # برای امنیت و جلوگیری از کرش کردن سیستم روی False تنظیم شد
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -140,19 +141,15 @@ def create_app() -> FastAPI:
             )
 
         try:
-            # تنظیم پروکسی در صورت وجود در تنظیمات سیستم (برای جلوگیری از بلاک شدن)
-            # فرض بر این است که fetch_transcript آپدیت شده و proxies را می‌پذیرد
             my_proxies = None
             if hasattr(settings, 'proxy_url') and settings.proxy_url:
                 my_proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
 
-            # دریافت کپشن یا زیرنویس ویدیو
             if my_proxies:
                 transcript = await asyncio.to_thread(fetch_transcript, video_id, proxies=my_proxies)
             else:
                 transcript = await asyncio.to_thread(fetch_transcript, video_id)
             
-            # پردازش متون و درج در پایگاه داده برداری Pinecone
             chunks_processed = await asyncio.to_thread(
                 process_and_ingest_video,
                 transcript,
@@ -160,17 +157,12 @@ def create_app() -> FastAPI:
                 request.user_id,
             )
             
-            # ثبت چت با استفاده از آیدی دریافتی از فرانت‌اند
             target_chat_id = request.chat_id
-            
-            # بررسی وجود چت قبل از ایجاد
             existing_chat = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
             
-            # اگر چت وجود نداشت، آن را ایجاد می‌کنیم
             if not existing_chat:
                 await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "Video Chat")
 
-            # اتصال محکم شناسه ویدیو به چت
             await asyncio.to_thread(
                 update_chat_video_id,
                 target_chat_id,
@@ -180,7 +172,6 @@ def create_app() -> FastAPI:
             
         except YouTubeTranscriptApiException as exc:
             logger.error(f"Failed to fetch transcript for video {video_id}: {exc}")
-            # تفکیک خطاهای یوتیوب برای ارائه پیام مناسب‌تر به کلاینت
             if is_transcript_blocked(exc):
                 raise HTTPException(status_code=429, detail="آی‌پی سرور توسط یوتیوب مسدود شده است. لطفاً بعداً تلاش کنید.") from exc
             elif is_transcript_not_found(exc):
@@ -275,17 +266,14 @@ def create_app() -> FastAPI:
         try:
             target_chat_id = request.chat_id
             
-            # بررسی وجود چت در دیتابیس
             existing = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
             
-            # اگر چت از قبل وجود نداشت، آن را با همان آیدی فرانت‌اند می‌سازیم
             if not existing:
                 await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "New Chat")
                 chat_title = "New Chat"
             else:
                 chat_title = existing.get("title", "New Chat")
 
-            # تغییر عنوان چت فقط در صورتی که هنوز "New Chat" باشد
             if chat_title == "New Chat":
                 new_title = derive_chat_title(request.query)
                 await asyncio.to_thread(
@@ -295,7 +283,7 @@ def create_app() -> FastAPI:
                     new_title,
                 )
 
-            # ذخیره پیام کاربر
+            # ذخیره پیام کاربر در دیتابیس محلی
             await asyncio.to_thread(
                 save_message,
                 chat_id=target_chat_id,
@@ -303,24 +291,28 @@ def create_app() -> FastAPI:
                 content=request.query,
             )
 
-            # آماده‌سازی state برای LangGraph
+            # اصلاح ساختار: محاسبه و استخراج هوشمند فیلد search_scope بر اساس ساختار AgentState
+            search_scope = "single_video" if request.video_id else "general"
+
+            # آماده‌سازی دیتای ورودی (State اولیه گراف)
             initial_state = {
                 "messages": [HumanMessage(content=request.query)],
                 "query": request.query,
                 "user_id": request.user_id,
                 "video_id": request.video_id,
+                "search_scope": search_scope,  # برای نود سوپروایزر و ریتریور الزامی است
                 "response": None,
             }
 
-            # اجرای LangGraph workflow
-            result = await asyncio.to_thread(get_agent_graph().invoke, initial_state)
+            # اصلاح بهینه‌سازی: اجرای آسنکرون بومی گراف به جای جابجایی ترد با توابع همگام
+            result = await get_agent_graph().ainvoke(initial_state)
 
             if not result or "response" not in result or not result["response"]:
                 raise HTTPException(status_code=500, detail="پاسخی از مدل دریافت نشد.")
 
             assistant_response = result["response"]
 
-            # ذخیره پیام دستیار
+            # ذخیره پاسخ مدل در دیتابیس محلی
             await asyncio.to_thread(
                 save_message,
                 chat_id=target_chat_id,
