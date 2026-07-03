@@ -1,23 +1,28 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
-import { 
-  Send, 
-  Sparkles, 
-  Bot, 
-  Copy, 
-  Check, 
-  RotateCcw, 
-  ThumbsUp, 
-  ThumbsDown, 
-  Trash2, 
+import {
+  Send,
+  Sparkles,
+  Copy,
+  Check,
+  RotateCcw,
+  ThumbsUp,
+  ThumbsDown,
+  Trash2,
   ArrowUpRight,
-  MessageSquare
+  MessageSquare,
+  Info,
+  ImageIcon,
+  CheckCheck,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVideo } from "@/context/VideoContext";
 import { cn } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
+
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 interface Props {
   chatId: string;
@@ -51,6 +56,14 @@ function extractTimestamps(text: string): string[] {
 function removeTimestampsFromText(text: string): string {
   // Removes timestamps and cleans up extra spaces
   return text.replace(/\[?\b\d{1,2}:\d{2}(?::\d{2})?\b\]?/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function formatMessageTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  } catch {
+    return "";
+  }
 }
 
 const isVideoSummary = (content: string) => {
@@ -177,8 +190,28 @@ const AssistantContent = memo(function AssistantContent({
   return (
     <div className="flex w-full flex-col gap-3 text-sm">
       {cleanContent && (
-        <div className="prose prose-invert max-w-none leading-relaxed whitespace-pre-wrap text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
-          {cleanContent}
+        <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              
+              a: ({ node, ...props }) => (
+                <a
+                  {...props}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-purple-400 transition-colors hover:text-purple-300 hover:underline hover:underline-offset-2 break-words"
+                />
+              ),
+             
+              p: ({ node, ...props }) => (
+                <p className="mb-2 last:mb-0 whitespace-pre-wrap inline" {...props} />
+              )
+            }}
+          >
+            {cleanContent}
+          </ReactMarkdown>
+
           {isStreaming && (
             <span
               className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-purple-400 align-middle"
@@ -187,7 +220,7 @@ const AssistantContent = memo(function AssistantContent({
           )}
         </div>
       )}
-      
+
       {/* Show timestamps only at the bottom */}
       {timestamps.length > 0 && !isStreaming && (
         <div className="mt-2 pt-3 border-t border-slate-700/50">
@@ -224,7 +257,7 @@ export default function ChatInterface({
 }: Props) {
   const [input, setInput] = useState("");
   const [questionType, setQuestionType] = useState<QuestionType>("about_video");
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { jumpToTime } = useVideo();
@@ -248,7 +281,7 @@ export default function ChatInterface({
   const handleSend = (e?: React.FormEvent) => {
     e?.preventDefault();
     if (!input.trim() || isTyping) return;
-    
+
     // You could pass `questionType` inside the message or context if your backend needs it.
     onSendMessage(input.trim());
     setInput("");
@@ -268,44 +301,50 @@ export default function ChatInterface({
         background: "radial-gradient(circle at top, rgba(124,58,237,0.12), transparent 40%), linear-gradient(180deg, #08101F 0%, #050816 100%)",
       }}
     >
-      {/* Header - Sticky */}
-      <div className="sticky top-0 z-10 flex-shrink-0 border-b border-slate-700/30 bg-[#08101F]/40 px-4 py-3 backdrop-blur-sm sm:px-5">
+      {/* Header */}
+      <div className="sticky top-0 z-10 flex-shrink-0 border-b border-white/[0.06] bg-[#08101F]/80 px-4 py-3 backdrop-blur-md sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/25">
               <Sparkles className="size-3.5 text-white" />
             </div>
-            <div className="min-w-0">
-              <h2 className="text-xs font-semibold text-white sm:text-sm truncate">
-                {chat?.title || "AI Assistant"}
-              </h2>
-            </div>
+            <h2 className="text-sm font-semibold text-white truncate">
+              AI Assistant
+            </h2>
           </div>
 
-          {/* Type Toggle Options */}
-          <div className="flex gap-1 rounded-lg border border-slate-700/30 bg-[#0C1426] p-0.5">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => setQuestionType("general")}
-              className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
-                questionType === "general"
-                  ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
-                  : "text-slate-400 hover:text-slate-300"
-              }`}
+              className="flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:text-white md:hidden"
+              aria-label="About this assistant"
             >
-              General
+              <Info className="size-4" />
             </button>
-            <button
-              type="button"
-              onClick={() => setQuestionType("about_video")}
-              className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
-                questionType === "about_video"
-                  ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
-                  : "text-slate-400 hover:text-slate-300"
-              }`}
-            >
-              About Video
-            </button>
+
+            {/* Type toggle — desktop only */}
+            <div className="hidden gap-1 rounded-lg border border-slate-700/30 bg-[#0C1426] p-0.5 md:flex">
+              <button
+                type="button"
+                onClick={() => setQuestionType("general")}
+                className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "general"
+                    ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
+                    : "text-slate-400 hover:text-slate-300"
+                  }`}
+              >
+                General
+              </button>
+              <button
+                type="button"
+                onClick={() => setQuestionType("about_video")}
+                className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "about_video"
+                    ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
+                    : "text-slate-400 hover:text-slate-300"
+                  }`}
+              >
+                About Video
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -338,6 +377,7 @@ export default function ChatInterface({
                 const isStreaming = !isUser && isLast && isTyping;
 
                 if (isUser) {
+                  const timeLabel = formatMessageTime(msg.created_at);
                   return (
                     <motion.div
                       key={msg.id || index}
@@ -345,16 +385,22 @@ export default function ChatInterface({
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-end"
                     >
-                      <div className="max-w-[85%] rounded-2xl rounded-br-md bg-gradient-to-br from-violet-600 to-purple-700 px-4 py-3 shadow-lg shadow-purple-500/20 sm:max-w-[88%] sm:px-5">
+                      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-gradient-to-br from-violet-600 to-purple-800 px-4 py-3 shadow-lg shadow-purple-500/25 sm:max-w-[85%]">
                         <p className="text-sm leading-relaxed whitespace-pre-wrap text-white">
                           {msg.content}
                         </p>
+                        {timeLabel && (
+                          <div className="mt-1.5 flex items-center justify-end gap-1 text-[10px] text-purple-200/70">
+                            <span>{timeLabel}</span>
+                            <CheckCheck className="size-3 text-purple-300/80" />
+                          </div>
+                        )}
                       </div>
                     </motion.div>
                   );
                 }
 
-                // Assistant Message
+                const timeLabel = formatMessageTime(msg.created_at);
                 return (
                   <motion.div
                     key={msg.id || index}
@@ -365,15 +411,18 @@ export default function ChatInterface({
                     <div className="mr-3 mt-1 flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20">
                       <Sparkles className="size-3.5 text-white" />
                     </div>
-                    <div className="group relative max-w-[85%] min-w-0 rounded-2xl rounded-tl-md border border-white/[0.08] bg-[#101A2E]/80 shadow-xl backdrop-blur-[10px] sm:max-w-[88%]">
+                    <div className="group relative max-w-[88%] min-w-0 rounded-2xl rounded-tl-md border border-white/[0.08] bg-[#101A2E]/90 shadow-xl backdrop-blur-md sm:max-w-[85%]">
                       <div className="px-4 py-3.5 sm:px-5">
                         <AssistantContent
                           content={msg.content}
                           isStreaming={isStreaming}
                           onJumpToTime={jumpToTime}
                         />
+                        {timeLabel && !isStreaming && (
+                          <p className="mt-2 text-[10px] text-slate-500">{timeLabel}</p>
+                        )}
                       </div>
-                      
+
                       {/* Action buttons */}
                       {!isStreaming && msg.content && (
                         <div className="flex items-center justify-end gap-1 border-t border-slate-700/30 px-4 py-2 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
@@ -400,7 +449,7 @@ export default function ChatInterface({
                   </motion.div>
                 );
               })}
-              
+
               {/* Typing Indicator / Skeleton */}
               {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -414,9 +463,9 @@ export default function ChatInterface({
       </div>
 
       {/* Input Area */}
-      <div className="sticky bottom-0 z-10 flex-shrink-0 bg-gradient-to-t from-[#050816] via-[#050816]/95 to-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+      <div className="sticky bottom-0 z-10 flex-shrink-0 bg-gradient-to-t from-[#050816] via-[#050816]/98 to-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
         <form onSubmit={handleSend} className="mx-auto max-w-3xl">
-          <div className="relative rounded-xl border border-slate-700/50 bg-[#0C1426] shadow-lg transition-all duration-200 focus-within:border-purple-500/50">
+          <div className="relative rounded-2xl border border-slate-700/50 bg-[#0C1426]/95 shadow-lg backdrop-blur-sm transition-all duration-200 focus-within:border-purple-500/50 focus-within:shadow-purple-500/10">
             <textarea
               id="chat-input"
               ref={textareaRef}
@@ -426,20 +475,42 @@ export default function ChatInterface({
               placeholder="Ask anything about this video..."
               rows={1}
               disabled={isTyping}
-              className="w-full resize-none bg-transparent px-4 py-3 pr-14 text-sm text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-60 sm:pr-20"
+              className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-60"
             />
-            <div className="absolute right-2 bottom-2 flex items-center gap-1">
-              <button
-                type="submit"
-                disabled={!input.trim() || isTyping}
-                className="rounded-lg bg-gradient-to-r from-violet-600 to-purple-700 p-2 text-white shadow-lg shadow-purple-500/20 transition-all duration-200 hover:from-violet-500 hover:to-purple-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Send className="size-4" />
-              </button>
-            </div>
+            <button
+              type="submit"
+              disabled={!input.trim() || isTyping}
+              className="absolute right-2 bottom-2 flex size-9 items-center justify-center rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 text-white shadow-lg shadow-purple-500/25 transition-all duration-200 hover:from-violet-500 hover:to-purple-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              <Send className="size-4" />
+            </button>
           </div>
 
-          <div className="mt-2 flex items-center justify-between">
+          {/* Mobile action buttons */}
+          <div className="mt-2 grid grid-cols-2 gap-2 md:hidden">
+            <button
+              type="button"
+              onClick={() => {
+                const iframe = document.querySelector("iframe[title]");
+                iframe?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#0C1426]/80 px-3 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:border-purple-500/30 hover:text-white"
+            >
+              <ImageIcon className="size-4 text-purple-400" />
+              Screenshot
+            </button>
+            <button
+              type="button"
+              onClick={onClearChat}
+              disabled={messages.length === 0 || !onClearChat}
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#0C1426]/80 px-3 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:border-red-500/30 hover:text-red-300 disabled:opacity-40"
+            >
+              <Trash2 className="size-4 text-slate-400" />
+              Clear Chat
+            </button>
+          </div>
+
+          <div className="mt-2 hidden items-center justify-between md:flex">
             <p className="text-[10px] text-slate-500 ml-1">
               AI can make mistakes. Verify important information.
             </p>

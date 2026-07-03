@@ -103,7 +103,7 @@ export function VideoTimelinePanel({
 
     setIsProcessing(true);
     setProcessStatus("loading");
-
+  clearTimeline();
     try {
       const actualChatId = !chatId || chatId === "new" ? null : chatId;
 
@@ -125,7 +125,7 @@ export function VideoTimelinePanel({
         setActiveVideoId(videoId);
         onVideoBound?.(videoId);
         setVideoTitle(data.title || `YouTube Video — ${videoId}`);
-        clearTimeline();
+        // clearTimeline();
 
         setTimeout(() => {
           setShowUrlInput(false);
@@ -180,17 +180,19 @@ export function VideoTimelinePanel({
   return (
     <section 
       className={cn(
-        "relative flex flex-col bg-gradient-to-b from-[#0B0F19] via-[#090D17] to-[#070B14] border-r border-white/[0.06] transition-all duration-300 h-full max-h-screen overflow-hidden",
-        isFullscreen ? "fixed inset-0 z-50 w-full h-full" : "flex-1 min-w-[400px]"
+        "relative flex flex-col overflow-hidden bg-gradient-to-b from-[#0B0F19] via-[#090D17] to-[#070B14] transition-all duration-300",
+        isFullscreen
+          ? "fixed inset-0 z-50 h-full w-full"
+          : "h-auto md:h-full md:max-h-screen md:min-w-[400px] md:flex-1 md:border-r md:border-white/[0.06]"
       )}
     >
       {/* Ambient Glow */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-purple-600/6 via-transparent to-transparent" />
       <div className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 w-[300px] h-[100px] bg-purple-600/10 blur-[80px]" />
 
-      {/* Video Player (Fixed Area) */}
-      <div className="shrink-0 p-5 pb-3 z-10">
-        <div className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black/60 shadow-2xl shadow-purple-500/5 backdrop-blur-sm group">
+      {/* Video Player */}
+      <div className="shrink-0 p-0 md:p-5 md:pb-3 z-10">
+        <div className="relative overflow-hidden md:rounded-2xl border-0 md:border border-white/[0.08] bg-black/60 shadow-2xl shadow-purple-500/5 md:backdrop-blur-sm group">
           <div className="relative aspect-video w-full">
             {currentVideoId ? (
               <iframe
@@ -234,8 +236,8 @@ export function VideoTimelinePanel({
           )}
         </div>
 
-        {/* Video Meta */}
-        <div className="mt-4 flex items-start justify-between gap-3">
+        {/* Video Meta — desktop only */}
+        <div className="mt-4 hidden items-start justify-between gap-3 md:flex">
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-semibold text-white truncate tracking-tight">
               {videoTitle}
@@ -256,9 +258,9 @@ export function VideoTimelinePanel({
           </button>
         </div>
 
-        {/* URL Input Panel */}
+        {/* URL Input Panel — desktop only */}
         {showUrlInput && (
-          <div className="mt-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="mt-3 hidden animate-in fade-in slide-in-from-top-2 duration-200 md:block">
             <div className="relative bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4 space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-medium text-purple-400 flex items-center gap-2">
@@ -331,8 +333,8 @@ export function VideoTimelinePanel({
         )}
       </div>
 
-      {/* Tabs Layout Container (Scrollable Area) */}
-      <div className="flex min-h-0 flex-1 flex-col px-5 pb-5 overflow-hidden">
+      {/* Tabs — desktop only */}
+      <div className="hidden min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 md:flex">
         <Tabs defaultValue="timeline" className="flex min-h-0 flex-1 flex-col">
           <TabsList className="w-full shrink-0 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-1 gap-1">
             <TabsTrigger

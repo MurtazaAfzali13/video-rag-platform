@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json  # <--- اضافه شدن ماژول json
 import logging
 from contextlib import asynccontextmanager
 from typing import Optional
@@ -116,11 +117,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # اصلاح باگ تنظیمات همزمان allow_origins="*" و allow_credentials=True
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=False,  # برای امنیت و جلوگیری از کرش کردن سیستم روی False تنظیم شد
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -161,7 +161,7 @@ def create_app() -> FastAPI:
             existing_chat = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
             
             if not existing_chat:
-                await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "Video Chat")
+                await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "New Chat")
 
             await asyncio.to_thread(
                 update_chat_video_id,
@@ -267,23 +267,12 @@ def create_app() -> FastAPI:
             target_chat_id = request.chat_id
             
             existing = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
-            
             if not existing:
                 await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "New Chat")
-                chat_title = "New Chat"
-            else:
-                chat_title = existing.get("title", "New Chat")
 
-            if chat_title == "New Chat":
-                new_title = derive_chat_title(request.query)
-                await asyncio.to_thread(
-                    update_chat_title,
-                    target_chat_id,
-                    request.user_id,
-                    new_title,
-                )
+            existing_messages = await asyncio.to_thread(list_messages, target_chat_id, limit=1)
+            is_first_interaction = len(existing_messages) == 0
 
-            # ذخیره پیام کاربر در دیتابیس محلی
             await asyncio.to_thread(
                 save_message,
                 chat_id=target_chat_id,
@@ -291,20 +280,17 @@ def create_app() -> FastAPI:
                 content=request.query,
             )
 
-            # اصلاح ساختار: محاسبه و استخراج هوشمند فیلد search_scope بر اساس ساختار AgentState
             search_scope = "single_video" if request.video_id else "general"
 
-            # آماده‌سازی دیتای ورودی (State اولیه گراف)
             initial_state = {
                 "messages": [HumanMessage(content=request.query)],
                 "query": request.query,
                 "user_id": request.user_id,
                 "video_id": request.video_id,
-                "search_scope": search_scope,  # برای نود سوپروایزر و ریتریور الزامی است
+                "search_scope": search_scope,
                 "response": None,
             }
 
-            # اصلاح بهینه‌سازی: اجرای آسنکرون بومی گراف به جای جابجایی ترد با توابع همگام
             result = await get_agent_graph().ainvoke(initial_state)
 
             if not result or "response" not in result or not result["response"]:
@@ -312,7 +298,35 @@ def create_app() -> FastAPI:
 
             assistant_response = result["response"]
 
-            # ذخیره پاسخ مدل در دیتابیس محلی
+            # --- بخش آپدیت شده: پردازش ایمن نام چت با پشتیبانی از خروجی JSON ---
+            if is_first_interaction:
+                try:
+                    # تلاش برای پارس کردن پاسخ به عنوان JSON
+                    parsed_response = json.loads(assistant_response)
+                    # اگر ساختار دیکشنری بود و کلید title داشت، آن را بردار
+                    if isinstance(parsed_response, dict) and "title" in parsed_response:
+                        clean_text = str(parsed_response["title"])
+                    else:
+                        clean_text = assistant_response
+                except Exception:
+                    # در صورت بروز هرگونه خطا (مثلاً متن ساده بود)، از کل پاسخ استفاده کن
+                    clean_text = assistant_response
+
+                clean_text = clean_text.strip()
+                
+                # محدود کردن طول عنوان
+                new_title = clean_text[:30]
+                if len(clean_text) > 30:
+                    new_title += "..."
+                    
+                await asyncio.to_thread(
+                    update_chat_title,
+                    target_chat_id,
+                    request.user_id,
+                    new_title,
+                )
+            # ------------------------------------------------------------------
+
             await asyncio.to_thread(
                 save_message,
                 chat_id=target_chat_id,

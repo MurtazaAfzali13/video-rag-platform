@@ -18,7 +18,7 @@ export default function ChatPage() {
   const initialVideoUrl = searchParams.get("videoUrl");
   const userId = useChatUserId();
   
-  const { setActiveVideoId, setTimelineItems } = useVideo();
+  const { setActiveVideoId, setTimelineItems, timelineItems } = useVideo();
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -143,16 +143,16 @@ export default function ChatPage() {
 
         const timestamps = parseTimestampsFromText(data.response);
         if (timestamps.length > 0) {
-          setTimelineItems((prev) => {
-            const newItems = timestamps
-              .filter((t) => !prev.find((p) => p.time === t.time))
-              .map(({ time }, i) => ({
-                id: `${assistantMsg.id}-${i}`,
-                time,
-                title: content.slice(0, 50),
-              }));
-            return [...prev, ...newItems];
-          });
+          const newItems = timestamps
+            .filter((t) => !timelineItems.find((p) => p.time === t.time))
+            .map(({ time }, i) => ({
+              id: `${assistantMsg.id}-${i}`,
+              time,
+              title: content.slice(0, 50),
+            }));
+          if (newItems.length) {
+            setTimelineItems([...timelineItems, ...newItems]);
+          }
         }
       } catch (err) {
         console.error(err);
@@ -160,14 +160,19 @@ export default function ChatPage() {
         setIsTyping(false);
       }
     },
-    [userId, chatId, chat?.video_id, setTimelineItems]
+    [userId, chatId, chat?.video_id, setTimelineItems, timelineItems]
   );
+
+  const handleClearChat = useCallback(() => {
+    setMessages([]);
+    setTimelineItems([]);
+  }, [setTimelineItems]);
 
   if (!userId) return null;
 
   return (
-    <div className="flex flex-1 h-full min-w-0 overflow-hidden bg-[#050816]">
-      <div className="w-[45%] min-w-[350px] border-r border-slate-800/50 bg-[#08101F]">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[#050816] md:flex-row">
+      <div className="w-full shrink-0 border-b border-slate-800/50 bg-[#08101F] md:h-full md:w-[45%] md:min-w-[350px] md:border-b-0 md:border-r">
         <VideoTimelinePanel
           chatId={chatId}
           userId={userId}
@@ -175,7 +180,7 @@ export default function ChatPage() {
         />
       </div>
 
-      <div className="flex-1 min-w-[400px]">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         <ChatInterface
           chatId={chatId}
           chat={chat}
@@ -183,6 +188,7 @@ export default function ChatPage() {
           isLoading={isLoadingChat}
           isTyping={isTyping}
           onSendMessage={handleSendMessage}
+          onClearChat={handleClearChat}
         />
       </div>
     </div>

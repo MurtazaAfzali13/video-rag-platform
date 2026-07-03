@@ -47,7 +47,7 @@ function groupChatsByDate(chats: Chat[]) {
   return Object.entries(groups).filter(([, items]) => items.length > 0);
 }
 
-export default function ChatSidebar() {
+export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user } = useUser();
@@ -91,14 +91,17 @@ export default function ChatSidebar() {
     if (isCreating) return;
     setIsCreating(true);
     try {
+      onNavigate?.();
       router.push("/chatbot");
     } finally {
       setIsCreating(false);
     }
   };
 
+
+
   return (
-    <aside className="relative flex w-[280px] shrink-0 flex-col h-full bg-gradient-to-b from-[#0B0F19] via-[#0A0E17] to-[#080C14] border-r border-white/[0.06]">
+    <aside className="relative flex h-full w-[280px] shrink-0 flex-col bg-gradient-to-b from-[#0B0F19] via-[#0A0E17] to-[#080C14] border-r border-white/[0.06]">
       {/* Background Glow */}
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-purple-600/5 via-transparent to-transparent" />
 
@@ -117,7 +120,7 @@ export default function ChatSidebar() {
         <button
           onClick={handleNewChat}
           disabled={isCreating}
-          className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-purple-600/20 transition-all duration-200 group"
+          className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-purple-600/20 transition-all duration-200 group md:hidden"
           title="New Chat"
         >
           {isCreating ? (
@@ -201,11 +204,21 @@ export default function ChatSidebar() {
                 </p>
                 <ul className="space-y-0.5">
                   {groupChats.map((chat) => {
+                   console.log("RAW:", JSON.stringify(chat.title));
+                    const displayTitle = (() => {
+                      try {
+                        const parsed = JSON.parse(chat.title);
+                        return parsed.title ?? chat.title;
+                      } catch {
+                        return chat.title;
+                      }
+                    })();
                     const isActive = pathname === `/chatbot/chat/${chat.id}`;
                     return (
                       <li key={chat.id}>
                         <Link
                           href={`/chatbot/chat/${chat.id}`}
+                          onClick={onNavigate}
                           className={cn(
                             "group relative flex w-full items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-left transition-all duration-200",
                             isActive
@@ -231,7 +244,7 @@ export default function ChatSidebar() {
                                 isActive ? "text-white" : "text-slate-300"
                               )}
                             >
-                              {chat.title}
+                              {displayTitle}
                             </p>
                             <p className="text-[10px] text-slate-500 mt-0.5">
                               {formatRelativeTime(chat.created_at)}
