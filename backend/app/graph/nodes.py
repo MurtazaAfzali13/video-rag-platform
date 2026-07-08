@@ -6,6 +6,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
+# بازگشت به ایمپورت قبلی که در سیستم شما نصب است و کار می‌کند
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 from app.config import get_settings
@@ -61,7 +62,6 @@ def _fetch_video_context(
     return "\n\n".join(context_parts)
 
 
-
 def supervisor_node(state: AgentState) -> dict[str, Any]:
     """Analyze the user's query and UI context to determine the next expert node."""
     logger.info("Entering Supervisor Agent...")
@@ -82,7 +82,6 @@ def supervisor_node(state: AgentState) -> dict[str, Any]:
         ("human", "Query: {query}\nSearch Scope: {search_scope}"),
     ])
     
-   
     settings = get_settings()
     router_chain = prompt | get_llm(settings.supervisor_model).with_structured_output(RouteDecision)
     
@@ -93,7 +92,6 @@ def supervisor_node(state: AgentState) -> dict[str, Any]:
     
     logger.info(f"Supervisor Decision: {decision.intent} | Reason: {decision.reasoning}")
     return {"next_node": decision.intent}
-
 
 
 def retriever_node(state: AgentState) -> dict[str, Any]:
@@ -137,7 +135,6 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
     return {"documents": retrieved_docs}
 
 
-
 def validator_node(state: AgentState) -> dict[str, Any]:
     """Strictly grade the relevance of retrieved documents to prevent hallucination."""
     logger.info("Entering Validator Node...")
@@ -163,7 +160,6 @@ def validator_node(state: AgentState) -> dict[str, Any]:
         ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"),
     ])
     
-    
     settings = get_settings()
     grader_chain = prompt | get_llm(settings.supervisor_model).with_structured_output(GradeDocuments)
     
@@ -176,25 +172,52 @@ def validator_node(state: AgentState) -> dict[str, Any]:
         return {"next_node": "web_search"} 
 
 
-
 def web_search_node(state: AgentState) -> dict[str, Any]:
     """Execute a fallback web search when local database resources are insufficient."""
     logger.info("Entering Web Search Node (Tavily)...")
     query = state["query"]
     
     web_search_tool = TavilySearchResults(max_results=3)
-    docs = web_search_tool.invoke({"query": query})
     
-    web_results = []
-    for d in docs:
-        web_results.append({
-            "page_content": d["content"],
-            "title": "جستجوی وب",
-            "video_id": d.get("url", "External Web Source"),
-            "start_time": 0
-        })
-    return {"documents": web_results}
+    try:
+        # فراخوانی ابزار بر اساس ساختار قدیمی که در سیستم شما کار می‌کرد
+        docs = web_search_tool.invoke({"query": query})
+    except Exception as e:
+        logger.error(f"Tavily Search failed: {str(e)}")
+        docs = []
 
+    # ایمن‌سازی بسیار قوی: بررسی تمام حالت‌های ممکن خروجی
+    if isinstance(docs, str):
+        try:
+            docs = json.loads(docs)
+        except json.JSONDecodeError:
+            # اگر فقط یک رشته متنی خام بود، آن را به عنوان یک محتوای جستجو در نظر می‌گیریم
+            docs = [{"content": docs, "url": "External Web Source"}]
+
+    web_results = []
+    
+    if isinstance(docs, list):
+        for d in docs:
+            if isinstance(d, dict):
+                # خروجی استاندارد
+                web_results.append({
+                    "page_content": d.get("content", ""),
+                    "title": "جستجوی وب",
+                    "video_id": d.get("url", "External Web Source"),
+                    "start_time": 0
+                })
+            elif isinstance(d, str):
+                # اگر لیست حاوی رشته‌ها بود، آن رشته را به عنوان متن محتوا قرار بده
+                web_results.append({
+                    "page_content": d,
+                    "title": "جستجوی وب",
+                    "video_id": "External Web Source",
+                    "start_time": 0
+                })
+            else:
+                logger.warning(f"Unexpected item in Tavily results: {d}")
+
+    return {"documents": web_results}
 
 
 def generate_answer_node(state: AgentState) -> dict[str, Any]:
@@ -243,14 +266,12 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         ("human", "{query}"),
     ])
     
-    # اصلاح: استفاده از مدل قدرتمند و اصلی برای تولید محتوا
     settings = get_settings()
     chain = prompt | get_llm(settings.generator_model) | StrOutputParser()
     
     response = chain.invoke({"query": query, "context": context_text})
     
     return {"response": response}
-
 
 
 def video_summary_node(state: AgentState) -> dict[str, Any]:
@@ -276,7 +297,6 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
         ("human", "{query}"),
     ])
 
-    # اصلاح: استفاده از مدل قدرتمند برای تولید خلاصه ساختاریافته آکادمیک
     settings = get_settings()
     chain = prompt | get_llm(settings.generator_model).with_structured_output(VideoSummarySchema)
     
