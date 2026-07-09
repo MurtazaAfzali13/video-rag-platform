@@ -232,9 +232,9 @@ const AssistantContent = memo(function AssistantContent({
                       <Globe className="size-4 text-blue-400 shrink-0 mt-0.5" />
                     )}
                     <div className="min-w-0 flex-1">
-                      <p className="text-xs font-medium text-slate-300 truncate" title={source.title}>
+                      {/* <p className="text-xs font-medium text-slate-300 truncate" title={source.title}>
                         {source.title}
-                      </p>
+                      </p> */}
                       {source.source_type === 'video' ? (
                         <span className="mt-1 inline-block bg-purple-900/50 text-purple-300 text-[10px] font-mono px-1.5 py-0.5 rounded">
                           {formatTimestamp(source.start_time || 0)}
