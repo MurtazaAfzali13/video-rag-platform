@@ -40,6 +40,34 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _ensure_video_exists(video_id: str, user_id: str) -> None:
+    """
+    بررسی می‌کند که آیا ویدیو در جدول videos وجود دارد یا خیر.
+    اگر وجود نداشت، یک رکورد اولیه موقت می‌سازد تا محدودیت Foreign Key نقض نشود.
+    """
+    url = f"{_base_url()}/rest/v1/videos"
+    headers = _headers(get_settings().supabase_service_role_key)
+    
+    with httpx.Client(timeout=10.0) as client:
+        # ۱. بررسی وجود ویدیو با استفاده از نام صحیح ستون کلید اصلی یعنی id
+        check_res = client.get(url, headers=headers, params={"id": f"eq.{video_id}", "select": "id"})
+        if check_res.status_code == 200 and check_res.json():
+            return  # ویدیو وجود دارد، نیازی به کار اضافه نیست
+            
+        # ۲. ایجاد رکورد موقت با رعایت ستون‌های اجباری id و user_id
+        logger.warning("Video %s not found in 'videos' table. Creating a placeholder to prevent FK error.", video_id)
+        placeholder = {
+            "id": video_id,
+            "user_id": user_id,
+            "title": "Processing Video...",
+            "created_at": _now_iso()
+        }
+        upsert_res = client.post(url, headers=headers, json=placeholder)
+        if upsert_res.status_code >= 400:
+            logger.error("Failed to ensure/create video placeholder: %s", upsert_res.text)
+            raise ChatStoreError(f"امکان ثبت ویدیو در دیتابیس وجود ندارد: {upsert_res.text}")
+
+
 def create_chat(
     *,
     user_id: str,
@@ -47,6 +75,10 @@ def create_chat(
     video_id: Optional[str] = None,
 ) -> dict[str, Any]:
     chat_id = str(uuid.uuid4())
+    
+    if video_id:
+        _ensure_video_exists(video_id, user_id)
+
     payload = {
         "id": chat_id,
         "user_id": user_id,
@@ -170,25 +202,12 @@ def derive_chat_title(query: str) -> str:
 
 
 def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Chat") -> dict[str, Any]:
-    """
-    Initialize a new chat or return existing one.
-    
-    Args:
-        user_id: The user ID
-        chat_id: Optional chat ID (if not provided, generates a new one)
-        title: Chat title (default: "New Chat")
-    
-    Returns:
-        The chat object
-    """
     target_id = chat_id if chat_id else str(uuid.uuid4())
     
-    # First check if chat exists
     existing = get_chat(target_id, user_id)
     if existing:
         return existing
     
-    # Create new chat
     payload = {
         "id": target_id,
         "user_id": user_id,
@@ -205,7 +224,6 @@ def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Cha
         )
 
     if response.status_code >= 400:
-        # اگر خطا به دلیل تکراری بودن آیدی بود (قبلاً ایجاد شده)، از آن صرف‌نظر می‌کنیم
         if response.status_code == 409:
             return get_chat(target_id, user_id) or payload
         logger.error("Failed to init chat: %s", response.text)
@@ -217,6 +235,9 @@ def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Cha
 
 def update_chat_video_id(chat_id: str, user_id: str, video_id: str) -> dict[str, Any]:
     """Update the video_id associated with a chat."""
+    # ارسال user_id به تابع برای ساخت ویدیو موقت
+    _ensure_video_exists(video_id, user_id)
+
     with httpx.Client(timeout=30.0) as client:
         response = client.patch(
             f"{_base_url()}/rest/v1/chats",

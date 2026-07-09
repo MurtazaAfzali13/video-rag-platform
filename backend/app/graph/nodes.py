@@ -6,11 +6,11 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
-# بازگشت به ایمپورت قبلی که در سیستم شما نصب است و کار می‌کند
+
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 from app.config import get_settings
-from app.graph.state import AgentState, VideoSummarySchema, RouteDecision, GradeDocuments
+from app.graph.state import AgentState, FinalAnswerSchema, VideoSummarySchema, RouteDecision, GradeDocuments,WebSourceSchema
 from app.ingestion import _get_embeddings
 
 logger = logging.getLogger(__name__)
@@ -129,7 +129,8 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
             "page_content": doc.page_content,
             "video_id": doc.metadata.get("video_id", "Unknown"),
             "title": doc.metadata.get("title") or doc.metadata.get("video_title") or "Unknown Title",
-            "start_time": doc.metadata.get("start_time", 0)
+            "start_time": doc.metadata.get("start_time", 0),
+            "source_type": "video"
         })
         
     return {"documents": retrieved_docs}
@@ -204,7 +205,8 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
                     "page_content": d.get("content", ""),
                     "title": "جستجوی وب",
                     "video_id": d.get("url", "External Web Source"),
-                    "start_time": 0
+                    "start_time": 0,
+                    "source_type": "web"
                 })
             elif isinstance(d, str):
                 # اگر لیست حاوی رشته‌ها بود، آن رشته را به عنوان متن محتوا قرار بده
@@ -212,16 +214,16 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
                     "page_content": d,
                     "title": "جستجوی وب",
                     "video_id": "External Web Source",
-                    "start_time": 0
+                    "start_time": 0,
+                    "source_type": "web"
                 })
             else:
                 logger.warning(f"Unexpected item in Tavily results: {d}")
 
     return {"documents": web_results}
 
-
 def generate_answer_node(state: AgentState) -> dict[str, Any]:
-    """Synthesize the final grounded response using either validated video snippets or web resources."""
+    """Synthesize the final grounded response with structured sources for UI rendering."""
     logger.info("Entering Generator Node...")
     query = state["query"]
     documents = state.get("documents", [])
@@ -229,10 +231,11 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
     context_parts = []
     is_web_search = False
     
-    for i, doc in enumerate(documents, start=1):
-        if "url" in doc.get("video_id", "") or doc.get("title") == "جستجوی وب":
+    # ۱. ساخت متن کانتکست برای مدل
+    for doc in documents:
+        if doc.get("source_type") == "web":
             is_web_search = True
-            context_parts.append(f"منبع خارجی {i} (وب): {doc['page_content']} | URL: {doc['video_id']}")
+            context_parts.append(f"منبع وب: {doc['page_content']} | URL: {doc['video_id']}")
         else:
             v_id = doc.get("video_id", "Unknown")
             v_title = doc.get("title", "Unknown Title")
@@ -247,8 +250,7 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
     transparency_note = ""
     if is_web_search:
         transparency_note = (
-            "توجه مهم: اطلاعات مورد نیاز کاربر در ویدیوهای بارگذاری شده یافت نشد. "
-            "بنابراین، این پاسخ بر اساس 'جستجوی وب' تهیه شده است. حتماً این موضوع را در ابتدای پاسخ به کاربر اطلاع دهید.\n\n"
+            "توجه مهم: اطلاعات در ویدیو یافت نشد. این پاسخ بر اساس 'جستجوی وب' است. این موضوع را حتما به کاربر بگو.\n\n"
         )
         
     system_prompt = (
@@ -256,8 +258,10 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         f"{transparency_note}"
         "Your task is to answer the user's question using ONLY the provided Context.\n"
         "RULES:\n"
-        "1. Do not use outside knowledge. If the answer is not in the context, say you don't know.\n"
-        "2. ALWAYS cite your sources at the end of the response (e.g., 'منابع: ویدیو ID فلان، زمان 02:15' or Web URL).\n"
+        "1. Do not use outside knowledge.\n"
+        "2. Write the main response in the 'answer' field using markdown.\n"
+        "3. For video sources, cite them inline using [MM:SS] format inside the 'answer' field.\n"
+        "4. For web sources, extract their URL and Title and put them in the 'web_sources' list array. Do NOT paste raw URLs in the text.\n"
         "Context:\n{context}"
     )
     
@@ -267,15 +271,47 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
     ])
     
     settings = get_settings()
-    chain = prompt | get_llm(settings.generator_model) | StrOutputParser()
+    chain = prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
+    result: FinalAnswerSchema = chain.invoke({"query": query, "context": context_text})
     
-    response = chain.invoke({"query": query, "context": context_text})
-    
-    return {"response": response}
+    # ۲. جمع‌آوری و یکپارچه‌سازی تمام منابع (ویدیو + وب) برای فرانت‌اِند
+    ui_sources = []
+    seen_video_timestamps = set()
+
+    # استخراج منابع ویدیو از داکیومنت‌های بازیابی شده
+    for doc in documents:
+        if doc.get("source_type") == "video":
+            # جلوگیری از تکرار کارت‌ها برای یک زمان مشخص از یک ویدیو
+            source_key = (doc.get("video_id"), doc.get("start_time"))
+            if source_key not in seen_video_timestamps:
+                seen_video_timestamps.add(source_key)
+                ui_sources.append({
+                    "source_type": "video",
+                    "video_id": doc.get("video_id"),
+                    "title": doc.get("title"),
+                    "start_time": doc.get("start_time")  # ثانیه خام برای کنترل پلیر
+                })
+
+    # اضافه کردن منابع وب استخراج شده توسط LLM
+    for web_src in result.web_sources:
+        ui_sources.append({
+            "source_type": "web",
+            "title": web_src.title,
+            "url": web_src.url
+        })
+
+    # ۳. بسته‌بندی نهایی خروجی به صورت JSON با مشخص کردن type
+    response_payload = {
+        "type": "qa_response",
+        "answer": result.answer,
+        "sources": ui_sources
+    }
+        
+    return {"response": json.dumps(response_payload, ensure_ascii=False)}
 
 
 def video_summary_node(state: AgentState) -> dict[str, Any]:
-    """Generate a high-fidelity chronological academic summary of the active video."""
+    """Generate a high-fidelity chronological academic summary with type identifier."""
     logger.info("Entering Video Summary Node...")
     user_id = state["user_id"]
     video_id = state["video_id"]
@@ -287,24 +323,21 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
         ("system", (
             "You are an academic video analyst. Using the timestamped transcript excerpts below, "
             "produce a structured summary of the video.\n"
-            "Requirements:\n"
-            "- Base every claim strictly on the provided transcript.\n"
-            "- Use MM:SS format for all timestamps in key takeaways.\n"
-            "- Order key takeaways chronologically by timestamp.\n"
-            "- Write in clear, professional, academically sound English.\n\n"
-            "Transcript excerpts with precise timestamps:\n{context}"
+            "Transcript excerpts:\n{context}"
         )),
         ("human", "{query}"),
     ])
 
     settings = get_settings()
     chain = prompt | get_llm(settings.generator_model).with_structured_output(VideoSummarySchema)
-    
     summary = chain.invoke({"context": context, "query": query})
 
     if isinstance(summary, VideoSummarySchema):
-        response_json = summary.model_dump_json(indent=2)
+        summary_dict = summary.model_dump()
     else:
-        response_json = json.dumps(summary, indent=2)
+        summary_dict = summary
+
+    # اضافه کردن تایپ برای تشخیص در فرانت‌اند
+    summary_dict["type"] = "video_summary"
         
-    return {"response": response_json}
+    return {"response": json.dumps(summary_dict, ensure_ascii=False)}

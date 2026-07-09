@@ -15,10 +15,12 @@ import {
   Info,
   ImageIcon,
   CheckCheck,
+  Globe,
+  PlayCircle,
+  ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVideo } from "@/context/VideoContext";
-import { cn } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
 
 import ReactMarkdown from "react-markdown";
@@ -38,8 +40,14 @@ interface Props {
 type QuestionType = "general" | "about_video";
 
 // ==========================================
-// Helper Functions (Inline for portability)
+// Helper Functions
 // ==========================================
+
+function formatTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+}
 
 function parseTimestampToSeconds(timeStr: string): number {
   const parts = timeStr.split(':').map(Number);
@@ -54,7 +62,6 @@ function extractTimestamps(text: string): string[] {
 }
 
 function removeTimestampsFromText(text: string): string {
-  // Removes timestamps and cleans up extra spaces
   return text.replace(/\[?\b\d{1,2}:\d{2}(?::\d{2})?\b\]?/g, '').replace(/\s{2,}/g, ' ').trim();
 }
 
@@ -65,11 +72,6 @@ function formatMessageTime(iso: string): string {
     return "";
   }
 }
-
-const isVideoSummary = (content: string) => {
-  const trimmed = content.trim();
-  return trimmed.startsWith("{") && trimmed.includes("key_takeaways");
-};
 
 // ==========================================
 // Components
@@ -145,45 +147,120 @@ const AssistantContent = memo(function AssistantContent({
   isStreaming: boolean;
   onJumpToTime: (seconds: number) => void;
 }) {
-  // 1. Check for Structured Data (JSON)
-  if (isVideoSummary(content) && !isStreaming) {
+  
+  // سعی می‌کنیم پیام را به عنوان JSON جدید ساختاریافته (از بک‌اند) پارس کنیم
+  let parsedContent: any = null;
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{") && !isStreaming) {
     try {
-      // In a real app, you might want to use 'jsonrepair' here if the LLM output is malformed
-      const parsed = JSON.parse(content);
-      const takeaways = parsed.key_takeaways || [];
-
-      return (
-        <div className="flex w-full flex-col gap-4 text-sm">
-          <div className="flex items-center gap-2 border-b border-purple-500/20 pb-2 text-xs text-purple-400">
-            <Sparkles className="size-4" />
-            <span className="font-medium">AI Video Summary</span>
-          </div>
-          {parsed.overall_summary && (
-            <p className="leading-relaxed text-slate-300">{parsed.overall_summary}</p>
-          )}
-          {takeaways.length > 0 && (
-            <div className="mt-2 space-y-3">
-              {takeaways.map((item: any, i: number) => (
-                <div key={i} className="flex flex-col gap-1.5 rounded-lg bg-white/5 p-3 border border-white/5">
-                  <p className="text-slate-300 text-sm leading-relaxed">{item.point}</p>
-                  {item.timestamp && (
-                    <div className="flex justify-end">
-                      <TimestampPill time={item.timestamp} onClick={onJumpToTime} />
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      );
+      parsedContent = JSON.parse(trimmed);
     } catch (e) {
-      // Fallback to normal text processing if JSON parse fails
-      console.error("Failed to parse video summary JSON", e);
+      // اگر پارس نشد، به حالت متن استاندارد باز می‌گردیم
     }
   }
 
-  // 2. Standard Text Processing (Extract timestamps, clean text)
+  // --- حالت ۱: خلاصه ویدیو (Video Summary) ---
+  if (parsedContent && (parsedContent.type === 'video_summary' || parsedContent.key_takeaways)) {
+    const takeaways = parsedContent.key_takeaways || [];
+    return (
+      <div className="flex w-full flex-col gap-4 text-sm">
+        <div className="flex items-center gap-2 border-b border-purple-500/20 pb-2 text-xs text-purple-400">
+          <Sparkles className="size-4" />
+          <span className="font-medium">AI Video Summary</span>
+        </div>
+        {parsedContent.overall_summary && (
+          <p className="leading-relaxed text-slate-300">{parsedContent.overall_summary}</p>
+        )}
+        {takeaways.length > 0 && (
+          <div className="mt-2 space-y-3">
+            {takeaways.map((item: any, i: number) => (
+              <div key={i} className="flex flex-col gap-1.5 rounded-lg bg-white/5 p-3 border border-white/5">
+                <p className="text-slate-300 text-sm leading-relaxed">{item.point}</p>
+                {item.timestamp && (
+                  <div className="flex justify-end">
+                    <TimestampPill time={item.timestamp} onClick={onJumpToTime} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        {parsedContent.academic_conclusion && (
+           <div className="text-xs italic border-t border-white/10 pt-2 mt-2 text-slate-400">
+             {parsedContent.academic_conclusion}
+           </div>
+        )}
+      </div>
+    );
+  }
+
+  // --- حالت ۲: پاسخ ساختاریافته QA (دارای منابع تفکیک شده ویدیو و وب) ---
+  if (parsedContent && parsedContent.type === 'qa_response') {
+    return (
+      <div className="flex w-full flex-col gap-3 text-sm">
+        <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+            {parsedContent.answer}
+          </ReactMarkdown>
+        </div>
+
+        {parsedContent.sources && parsedContent.sources.length > 0 && (
+          <div className="mt-2 pt-3 border-t border-slate-700/50">
+            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+              <ArrowUpRight className="size-3" />
+              Sources
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {parsedContent.sources.map((source: any, idx: number) => (
+                <div 
+                  key={idx}
+                  className={`flex flex-col gap-1.5 rounded-lg p-2.5 border transition-all duration-200 ${
+                    source.source_type === 'video' 
+                      ? 'border-purple-500/20 bg-purple-500/5 hover:bg-purple-500/10 hover:border-purple-500/40 cursor-pointer group' 
+                      : 'border-slate-700/50 bg-slate-800/30'
+                  }`}
+                  onClick={() => {
+                    if (source.source_type === 'video' && source.start_time !== undefined) {
+                       onJumpToTime(source.start_time);
+                    }
+                  }}
+                >
+                  <div className="flex items-start gap-2">
+                    {source.source_type === 'video' ? (
+                      <PlayCircle className="size-4 text-purple-400 shrink-0 mt-0.5 transition-transform group-hover:scale-110" />
+                    ) : (
+                      <Globe className="size-4 text-blue-400 shrink-0 mt-0.5" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-medium text-slate-300 truncate" title={source.title}>
+                        {source.title}
+                      </p>
+                      {source.source_type === 'video' ? (
+                        <span className="mt-1 inline-block bg-purple-900/50 text-purple-300 text-[10px] font-mono px-1.5 py-0.5 rounded">
+                          {formatTimestamp(source.start_time || 0)}
+                        </span>
+                      ) : (
+                        <a 
+                          href={source.url} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="mt-1 flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 hover:underline"
+                        >
+                          View Web Source <ExternalLink className="size-2.5" />
+                        </a>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // --- حالت ۳: پردازش متن استاندارد / Streaming (Legacy / Fallback) ---
   const timestamps = extractTimestamps(content);
   const cleanContent = removeTimestampsFromText(content);
 
@@ -194,7 +271,6 @@ const AssistantContent = memo(function AssistantContent({
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
-              
               a: ({ node, ...props }) => (
                 <a
                   {...props}
@@ -203,7 +279,6 @@ const AssistantContent = memo(function AssistantContent({
                   className="text-purple-400 transition-colors hover:text-purple-300 hover:underline hover:underline-offset-2 break-words"
                 />
               ),
-             
               p: ({ node, ...props }) => (
                 <p className="mb-2 last:mb-0 whitespace-pre-wrap inline" {...props} />
               )
@@ -221,12 +296,11 @@ const AssistantContent = memo(function AssistantContent({
         </div>
       )}
 
-      {/* Show timestamps only at the bottom */}
       {timestamps.length > 0 && !isStreaming && (
         <div className="mt-2 pt-3 border-t border-slate-700/50">
           <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
             <ArrowUpRight className="size-3" />
-            Sources
+            Extracted Timestamps
           </p>
           <div className="flex flex-wrap items-center gap-2">
             {timestamps.map((timestamp, index) => (
@@ -243,8 +317,6 @@ const AssistantContent = memo(function AssistantContent({
   );
 });
 
-
-
 export default function ChatInterface({
   chatId,
   chat,
@@ -260,6 +332,8 @@ export default function ChatInterface({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  
+  // استفاده از کانتکست ویدیو که قبلا پیاده‌سازی کردید
   const { jumpToTime } = useVideo();
 
   // Scroll to bottom
@@ -282,7 +356,6 @@ export default function ChatInterface({
     e?.preventDefault();
     if (!input.trim() || isTyping) return;
 
-    // You could pass `questionType` inside the message or context if your backend needs it.
     onSendMessage(input.trim());
     setInput("");
   };
@@ -322,25 +395,28 @@ export default function ChatInterface({
               <Info className="size-4" />
             </button>
 
-            {/* Type toggle — desktop only */}
+            {/* Type toggle */}
             <div className="hidden gap-1 rounded-lg border border-slate-700/30 bg-[#0C1426] p-0.5 md:flex">
               <button
                 type="button"
                 onClick={() => setQuestionType("general")}
-                className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "general"
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
+                  questionType === "general"
                     ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
                     : "text-slate-400 hover:text-slate-300"
-                  }`}
+                }`}
               >
+                <Globe className="size-3.5" />
                 General
               </button>
               <button
                 type="button"
                 onClick={() => setQuestionType("about_video")}
-                className={`rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "about_video"
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
+                  questionType === "about_video"
                     ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
                     : "text-slate-400 hover:text-slate-300"
-                  }`}
+                }`}
               >
                 About Video
               </button>
@@ -375,9 +451,9 @@ export default function ChatInterface({
                 const isUser = msg.role === "user";
                 const isLast = index === messages.length - 1;
                 const isStreaming = !isUser && isLast && isTyping;
+                const timeLabel = formatMessageTime(msg.created_at);
 
                 if (isUser) {
-                  const timeLabel = formatMessageTime(msg.created_at);
                   return (
                     <motion.div
                       key={msg.id || index}
@@ -400,7 +476,6 @@ export default function ChatInterface({
                   );
                 }
 
-                const timeLabel = formatMessageTime(msg.created_at);
                 return (
                   <motion.div
                     key={msg.id || index}
@@ -450,7 +525,7 @@ export default function ChatInterface({
                 );
               })}
 
-              {/* Typing Indicator / Skeleton */}
+              {/* Typing Indicator */}
               {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                   <LoadingSkeleton />

@@ -71,3 +71,18 @@ class GradeDocuments(BaseModel):
         ...,
         description="Briefly explain why the documents are relevant or missing the required information."
     )
+    
+    
+class WebSourceSchema(BaseModel):
+    title: str = Field(..., description="A short, descriptive title for the web page.")
+    url: str = Field(..., description="The URL of the web source.")
+
+class FinalAnswerSchema(BaseModel):
+    answer: str = Field(
+        ..., 
+        description="The main answer text in markdown format. Do NOT include raw web URLs inside this text."
+    )
+    web_sources: List[WebSourceSchema] = Field(
+        default=[], 
+        description="List of web sources used to answer the query. Empty if no web sources were used."
+    )
