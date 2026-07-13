@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { DashboardProvider } from "@/context/DashboardContext";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,6 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <ClerkProvider>
+      <DashboardProvider>
       <html lang="en" className="dark">
         <body className={`${inter.className} bg-black text-white antialiased`}>
           <TooltipProvider>
@@ -25,6 +27,7 @@ export default function RootLayout({
           </TooltipProvider>
         </body>
       </html>
+      </DashboardProvider>
     </ClerkProvider>
   );
 }

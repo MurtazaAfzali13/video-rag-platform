@@ -1,0 +1,382 @@
+import {
+  Users,
+  MessageSquare,
+  Video,
+  Globe,
+  DollarSign,
+  Timer,
+  CheckCircle2,
+  AlertTriangle,
+  UploadCloud,
+  HelpCircle,
+  Search,
+  ShieldCheck,
+  Sparkles,
+  UserPlus,
+  Server,
+  Database,
+  Cpu,
+  Boxes,
+  Workflow,
+  Radio,
+  ActivitySquare,
+  GitBranch,
+  Gauge,
+  KeyRound,
+  CreditCard,
+  Layers,
+  BrainCircuit,
+  TestTubeDiagonal,
+  Repeat,
+} from "lucide-react";
+import type {
+  DashboardMetric,
+  Activity,
+  SystemHealth,
+  CostData,
+  WorkflowNode,
+  Notification,
+  UserRow,
+  TopUser,
+  HealthSubMetric,
+  ChartPoint,
+  FutureWidget,
+} from "@/types/dashboard";
+
+/** Small helper to generate a realistic-looking sparkline. */
+function spark(base: number, variance: number, points = 12): ChartPoint[] {
+  return Array.from({ length: points }, (_, i) => ({
+    label: `${i}`,
+    value: Math.max(0, Math.round(base + (Math.sin(i * 1.3) + Math.random() - 0.5) * variance)),
+  }));
+}
+
+export const metrics: DashboardMetric[] = [
+  {
+    id: "users-online",
+    label: "Users Online",
+    value: "128",
+    rawValue: 128,
+    change: 12.5,
+    trend: "up",
+    icon: Users,
+    color: "blue",
+    spark: spark(110, 20),
+  },
+  {
+    id: "questions-today",
+    label: "Questions Today",
+    value: "4,328",
+    rawValue: 4328,
+    change: 18.2,
+    trend: "up",
+    icon: MessageSquare,
+    color: "purple",
+    spark: spark(4000, 500),
+  },
+  {
+    id: "videos-uploaded",
+    label: "Videos Uploaded",
+    value: "287",
+    rawValue: 287,
+    change: 8.7,
+    trend: "up",
+    icon: Video,
+    color: "cyan",
+    spark: spark(260, 40),
+  },
+  {
+    id: "web-searches",
+    label: "Web Searches",
+    value: "438",
+    rawValue: 438,
+    change: 23.1,
+    trend: "up",
+    icon: Globe,
+    color: "blue",
+    spark: spark(400, 60),
+  },
+  {
+    id: "ai-cost-today",
+    label: "AI Cost Today",
+    value: "$38.21",
+    rawValue: 38.21,
+    change: 15.4,
+    trend: "up",
+    icon: DollarSign,
+    color: "pink",
+    spark: spark(35, 6),
+  },
+  {
+    id: "avg-response-time",
+    label: "Avg. Response Time",
+    value: "2.3s",
+    rawValue: 2.3,
+    change: -8.3,
+    trend: "down",
+    icon: Timer,
+    color: "purple",
+    spark: spark(2.4, 0.5),
+  },
+  {
+    id: "success-rate",
+    label: "Success Rate",
+    value: "99.4%",
+    rawValue: 99.4,
+    change: 1.2,
+    trend: "up",
+    icon: CheckCircle2,
+    color: "green",
+    spark: spark(99, 0.6),
+  },
+  {
+    id: "errors-today",
+    label: "Errors Today",
+    value: "3",
+    rawValue: 3,
+    change: -40,
+    trend: "down",
+    icon: AlertTriangle,
+    color: "red",
+    spark: spark(4, 2),
+  },
+];
+
+export const salesOverview: ChartPoint[] = [
+  { label: "Dec 21", value: 2100 },
+  { label: "Dec 22", value: 2800 },
+  { label: "Dec 23", value: 2300 },
+  { label: "Dec 24", value: 3850 },
+  { label: "Dec 25", value: 3100 },
+  { label: "Dec 26", value: 3600 },
+  { label: "Dec 27", value: 4328 },
+];
+
+export const workflowDistribution: WorkflowNode[] = [
+  { id: "retriever", label: "Retriever", value: 1541, percentage: 35.6, color: "#3b82f6" },
+  { id: "validator", label: "Validator", value: 957, percentage: 22.1, color: "#a855f7" },
+  { id: "generator", label: "Generator", value: 879, percentage: 20.3, color: "#ec4899" },
+  { id: "web-search", label: "Web Search", value: 537, percentage: 12.4, color: "#22d3ee" },
+  { id: "other", label: "Other", value: 414, percentage: 9.6, color: "#64748b" },
+];
+
+export const activities: Activity[] = [
+  {
+    id: "a1",
+    type: "upload",
+    title: "New video uploaded by Ali Reza",
+    description: '"LangGraph Advanced Tutorial"',
+    timestamp: "2m ago",
+    icon: UploadCloud,
+    color: "blue",
+  },
+  {
+    id: "a2",
+    type: "question",
+    title: "Sara asked a question",
+    description: '"What is StateGraph?"',
+    timestamp: "3m ago",
+    icon: HelpCircle,
+    color: "purple",
+  },
+  {
+    id: "a3",
+    type: "web_search",
+    title: "Web search executed",
+    description: "Tavily · 4 results",
+    timestamp: "4m ago",
+    icon: Search,
+    color: "cyan",
+  },
+  {
+    id: "a4",
+    type: "validator",
+    title: "Validator score 94%",
+    description: "Context passed relevance threshold",
+    timestamp: "5m ago",
+    icon: ShieldCheck,
+    color: "green",
+  },
+  {
+    id: "a5",
+    type: "upgrade",
+    title: "Plan upgraded to Pro",
+    description: "User: Mehran",
+    timestamp: "6m ago",
+    icon: Sparkles,
+    color: "amber",
+  },
+  {
+    id: "a6",
+    type: "user_registered",
+    title: "New user registered",
+    description: "User: Reza Hakimi",
+    timestamp: "8m ago",
+    icon: UserPlus,
+    color: "pink",
+  },
+];
+
+export const systemHealth: SystemHealth[] = [
+  { id: "api", name: "API Server", status: "healthy", icon: Server, latency: "42ms" },
+  { id: "pinecone", name: "Pinecone", status: "healthy", icon: Boxes, latency: "88ms" },
+  { id: "openai", name: "OpenAI", status: "healthy", icon: Cpu, latency: "610ms" },
+  { id: "tavily", name: "Tavily", status: "healthy", icon: Globe, latency: "240ms" },
+  { id: "database", name: "Database", status: "healthy", icon: Database, latency: "6ms" },
+  { id: "redis", name: "Redis", status: "warning", icon: Radio, latency: "120ms" },
+];
+
+export const costBreakdown: CostData[] = [
+  { id: "openai", label: "OpenAI", value: 68.4, percentage: 44.1, color: "#3b82f6" },
+  { id: "pinecone", label: "Pinecone", value: 38.5, percentage: 24.8, color: "#a855f7" },
+  { id: "tavily", label: "Tavily", value: 21.3, percentage: 13.7, color: "#ec4899" },
+  { id: "embeddings", label: "Embeddings", value: 16.8, percentage: 10.8, color: "#22d3ee" },
+  { id: "others", label: "Others", value: 10.2, percentage: 6.6, color: "#64748b" },
+];
+
+export const responseTime: ChartPoint[] = [
+  { label: "Sat", value: 2.1 },
+  { label: "Sun", value: 2.6 },
+  { label: "Mon", value: 1.9 },
+  { label: "Tue", value: 2.8 },
+  { label: "Wed", value: 2.2 },
+  { label: "Thu", value: 3.1 },
+  { label: "Fri", value: 2.3 },
+];
+
+export const usersTable: UserRow[] = [
+  {
+    id: "u1",
+    name: "Ali Reza",
+    avatar: "AR",
+    plan: "Pro Plan",
+    amount: 29,
+    questions: 234,
+    videos: 18,
+    lastActive: "Dec 27, 10:45",
+    status: "Completed",
+  },
+  {
+    id: "u2",
+    name: "Sara Ahmadi",
+    avatar: "SA",
+    plan: "Pro Plan",
+    amount: 29,
+    questions: 182,
+    videos: 12,
+    lastActive: "Dec 27, 09:12",
+    status: "Completed",
+  },
+  {
+    id: "u3",
+    name: "Mehran Karimi",
+    avatar: "MK",
+    plan: "Free Plan",
+    amount: 0,
+    questions: 145,
+    videos: 6,
+    lastActive: "Dec 27, 08:33",
+    status: "Completed",
+  },
+  {
+    id: "u4",
+    name: "Reza Hakimi",
+    avatar: "RH",
+    plan: "Pro Plan",
+    amount: 29,
+    questions: 98,
+    videos: 9,
+    lastActive: "Dec 27, 07:21",
+    status: "Completed",
+  },
+  {
+    id: "u5",
+    name: "Nima Heidari",
+    avatar: "NH",
+    plan: "Pro Plan",
+    amount: 29,
+    questions: 76,
+    videos: 4,
+    lastActive: "Dec 26, 22:11",
+    status: "Completed",
+  },
+];
+
+export const topUsers: TopUser[] = usersTable
+  .map((u, i) => ({
+    id: u.id,
+    rank: i + 1,
+    name: u.name,
+    avatar: u.avatar,
+    questions: u.questions,
+    percentage: Math.round((u.questions / usersTable[0].questions) * 100),
+  }))
+  .sort((a, b) => b.questions - a.questions);
+
+export const aiHealthScore = {
+  score: 97,
+  label: "Excellent",
+};
+
+export const healthSubMetrics: HealthSubMetric[] = [
+  { id: "retrieval", label: "Retrieval Success", value: 98.2, change: 2.1, trend: "up", tone: "positive" },
+  { id: "validation", label: "Validation Success", value: 96.8, change: 1.7, trend: "up", tone: "positive" },
+  { id: "hallucination", label: "Hallucination Rate", value: 1.2, change: -0.3, trend: "down", tone: "positive" },
+  { id: "error", label: "Error Rate", value: 0.6, change: -0.2, trend: "down", tone: "positive" },
+  { id: "retry", label: "Retry Rate", value: 2.4, change: -0.5, trend: "down", tone: "positive" },
+];
+
+export const notifications: Notification[] = [
+  {
+    id: "n1",
+    level: "warning",
+    title: "High cost detected",
+    description: "OpenAI cost is 85% of your daily budget",
+    timestamp: "5m ago",
+  },
+  {
+    id: "n2",
+    level: "critical",
+    title: "OpenAI responding slowly",
+    description: "Average latency exceeded 3.5s in the last 10 minutes",
+    timestamp: "18m ago",
+  },
+  {
+    id: "n3",
+    level: "info",
+    title: "Worker restarted",
+    description: "Background worker #3 restarted automatically",
+    timestamp: "25m ago",
+  },
+  {
+    id: "n4",
+    level: "warning",
+    title: "Storage nearly full",
+    description: "Video storage is at 92% capacity",
+    timestamp: "40m ago",
+  },
+  {
+    id: "n5",
+    level: "success",
+    title: "All systems operational",
+    description: "Everything is running smoothly",
+    timestamp: "1h ago",
+  },
+];
+
+export const futureWidgets: FutureWidget[] = [
+  { id: "langsmith", title: "LangSmith Tracing", description: "Trace every LangGraph run node-by-node", icon: GitBranch },
+  { id: "observability", title: "Observability", description: "Full-stack logs, metrics & traces", icon: ActivitySquare },
+  { id: "prompt-analytics", title: "Prompt Analytics", description: "Track prompt performance over time", icon: Sparkles },
+  { id: "model-comparison", title: "Model Comparison", description: "Compare quality & cost across models", icon: Layers },
+  { id: "token-usage", title: "Token Usage", description: "Per-user & per-workflow token consumption", icon: Cpu },
+  { id: "sessions", title: "User Sessions", description: "Session replay & journey analytics", icon: Users },
+  { id: "rate-limiting", title: "Rate Limiting", description: "Per-plan request throttling controls", icon: Gauge },
+  { id: "api-usage", title: "API Usage", description: "Endpoint-level usage breakdown", icon: KeyRound },
+  { id: "billing", title: "Billing", description: "Invoices, usage-based billing history", icon: CreditCard },
+  { id: "subscriptions", title: "Subscriptions", description: "Plan upgrades, downgrades & churn", icon: Repeat },
+  { id: "reflection", title: "Reflection Analytics", description: "Self-critique loop performance", icon: BrainCircuit },
+  { id: "evaluation", title: "Evaluation Metrics", description: "Offline & online eval scorecards", icon: TestTubeDiagonal },
+  { id: "crag", title: "CRAG Analytics", description: "Corrective RAG loop breakdown", icon: Workflow },
+  { id: "web-analytics", title: "Web Search Analytics", description: "Tavily fallback usage & quality", icon: Globe },
+];

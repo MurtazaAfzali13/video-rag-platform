@@ -2,6 +2,8 @@ import json
 import logging
 from typing import Any
 
+import time
+
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
@@ -97,6 +99,7 @@ def supervisor_node(state: AgentState) -> dict[str, Any]:
 def retriever_node(state: AgentState) -> dict[str, Any]:
     """Retrieve transcript chunks from Pinecone based on the supervisor's search scope."""
     logger.info("Entering Retriever Node...")
+    start_time = time.time()
     user_id = state["user_id"]
     video_id = state["video_id"]
     query = state["query"]
@@ -132,13 +135,15 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
             "start_time": doc.metadata.get("start_time", 0),
             "source_type": "video"
         })
-        
-    return {"documents": retrieved_docs}
+    
+    elapsed_ms = int((time.time() - start_time) * 1000) 
+    return {"documents": retrieved_docs, "retriever_time_ms": elapsed_ms}
 
 
 def validator_node(state: AgentState) -> dict[str, Any]:
     """Strictly grade the relevance of retrieved documents to prevent hallucination."""
     logger.info("Entering Validator Node...")
+    start_time = time.time()
     query = state["query"]
     documents = state.get("documents", [])
     
@@ -167,10 +172,12 @@ def validator_node(state: AgentState) -> dict[str, Any]:
     result: GradeDocuments = grader_chain.invoke({"query": query, "context": context_text})
     logger.info(f"Validation Score: {result.binary_score} | Reason: {result.explanation}")
     
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    
     if result.binary_score == "yes":
-        return {"next_node": "generator"}  
+        return {"next_node": "generator", "validator_time_ms": elapsed_ms}  
     else:
-        return {"next_node": "web_search"} 
+        return {"next_node": "web_search", "validator_time_ms": elapsed_ms}
 
 
 def web_search_node(state: AgentState) -> dict[str, Any]:
@@ -225,6 +232,7 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
 def generate_answer_node(state: AgentState) -> dict[str, Any]:
     """Synthesize the final grounded response with structured sources for UI rendering."""
     logger.info("Entering Generator Node...")
+    start_time = time.time()
     query = state["query"]
     documents = state.get("documents", [])
     
@@ -307,12 +315,14 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         "sources": ui_sources
     }
         
-    return {"response": json.dumps(response_payload, ensure_ascii=False)}
+    elapsed_ms = int((time.time() - start_time) * 1000) 
+    return {"response": json.dumps(response_payload, ensure_ascii=False), "generator_time_ms": elapsed_ms}
 
 
 def video_summary_node(state: AgentState) -> dict[str, Any]:
     """Generate a high-fidelity chronological academic summary with type identifier."""
     logger.info("Entering Video Summary Node...")
+    start_time = time.time()
     user_id = state["user_id"]
     video_id = state["video_id"]
     query = state["query"]
@@ -340,4 +350,5 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
     # اضافه کردن تایپ برای تشخیص در فرانت‌اند
     summary_dict["type"] = "video_summary"
         
-    return {"response": json.dumps(summary_dict, ensure_ascii=False)}
+    elapsed_ms = int((time.time() - start_time) * 1000)
+    return {"response": json.dumps(summary_dict, ensure_ascii=False), "generator_time_ms": elapsed_ms}
