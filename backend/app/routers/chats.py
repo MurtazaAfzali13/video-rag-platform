@@ -169,20 +169,13 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
 
         assistant_response = result["response"]
 
+        # --- بخش اصلاح شده برای استخراج عنوان چت ---
         if is_first_interaction:
-            try:
-                parsed_response = json.loads(assistant_response)
-                if isinstance(parsed_response, dict) and "title" in parsed_response:
-                    clean_text = str(parsed_response["title"])
-                else:
-                    clean_text = assistant_response
-            except Exception:
-                clean_text = assistant_response
-
-            clean_text = clean_text.strip()
+            # استفاده مستقیم از سوال کاربر برای ساخت عنوان چت
+            clean_text = request.query.strip()
             
-            new_title = clean_text[:30]
-            if len(clean_text) > 30:
+            new_title = clean_text[:35]
+            if len(clean_text) > 35:
                 new_title += "..."
                 
             await asyncio.to_thread(
@@ -191,6 +184,7 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
                 request.user_id,
                 new_title,
             )
+        # --- پایان بخش اصلاح شده ---
 
         await asyncio.to_thread(
             save_message,
