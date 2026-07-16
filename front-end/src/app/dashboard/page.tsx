@@ -1,3 +1,4 @@
+// فایل: DashboardPage.tsx
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { MetricsGrid } from "@/components/dashboard/cards/MetricsGrid";
 import { SalesOverviewChart, WorkflowDistributionCard } from "@/components/dashboard/charts";
@@ -8,8 +9,10 @@ export const metadata = {
   description: "AI Operations Dashboard for the VidBrain Agentic CRAG Platform",
 };
 
-
 export default function DashboardPage() {
+  // این همان آیدی کاربری است که در لاگ‌های بک‌اند شما ثبت شده بود
+  const currentUserId = "user_3FOfWMpgxPu5eB5bUWAn5E4bsqV";
+
   return (
     <DashboardShell
       breadcrumb="Dashboard / Overview"
@@ -26,7 +29,8 @@ export default function DashboardPage() {
             <SalesOverviewChart />
           </div>
           <div className="xl:col-span-1">
-            <WorkflowDistributionCard />
+            {/* پاس دادن userId برای رفع ارور تایپ‌اسکریپت و دریافت دیتای صحیح */}
+            <WorkflowDistributionCard userId={currentUserId} />
           </div>
           <div className="xl:col-span-1">
             <ActivityFeed />

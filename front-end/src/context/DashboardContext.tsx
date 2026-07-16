@@ -48,17 +48,21 @@ const DashboardContext = createContext<{
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(dashboardReducer, initialState);
 
-  const fetchWorkflowDistribution = async (userId: string) => {
-    dispatch({ type: "FETCH_START" });
-    try {
-      const res = await fetch(`/api/dashboard/workflow-distribution?user_id=${userId}`);
-      if (!res.ok) throw new Error("مشکلی در دریافت اطلاعات داشبورد رخ داد.");
-      const data = await res.json();
-      dispatch({ type: "FETCH_SUCCESS", payload: data });
-    } catch (err: any) {
-      dispatch({ type: "FETCH_FAILURE", payload: err.message || "خطای ناشناخته" });
-    }
-  };
+
+
+const fetchWorkflowDistribution = async (userId: string) => {
+  dispatch({ type: "FETCH_START" });
+  try {
+  
+    const res = await fetch(`http://127.0.0.1:8000/api/dashboard/workflow-distribution?user_id=${userId}`);
+    
+    if (!res.ok) throw new Error("مشکلی در دریافت اطلاعات داشبورد رخ داد.");
+    const data = await res.json();
+    dispatch({ type: "FETCH_SUCCESS", payload: data });
+  } catch (err: any) {
+    dispatch({ type: "FETCH_FAILURE", payload: err.message || "خطای ناشناخته" });
+  }
+};
 
   return (
     <DashboardContext.Provider value={{ state, fetchWorkflowDistribution }}>
