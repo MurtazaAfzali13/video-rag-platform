@@ -7,6 +7,8 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
+import time
+
 import httpx
 
 from app.config import get_settings
@@ -276,3 +278,60 @@ def update_chat_title(chat_id: str, user_id: str, title: str) -> dict[str, Any]:
 
     rows = response.json()
     return rows[0] if isinstance(rows, list) and rows else {"id": chat_id, "title": title}
+
+
+
+def get_user_workflow_distribution(user_id: str) -> list[dict[str, Any]]:
+    """Fetch aggregated LangGraph node execution stats via Supabase RPC."""
+    url = f"{_base_url()}/rest/v1/rpc/get_workflow_distribution"
+    headers = _headers(get_settings().supabase_service_role_key)
+    
+    with httpx.Client(timeout=15.0) as client:
+        response = client.post(url, headers=headers, json={"p_user_id": user_id})
+        
+    if response.status_code >= 400:
+        logger.error("Failed to fetch dashboard workflow metrics: %s", response.text)
+        raise ChatStoreError(response.text)
+        
+    return response.json()
+
+
+
+
+def save_workflow_trace(
+    chat_id: str, 
+    workflow: str, 
+    retriever_time_ms: int = 0, 
+    generator_time_ms: int = 0, 
+    validator_time_ms: int = 0, 
+    success: bool = True
+) -> None:
+    """Saves the execution trace of LangGraph nodes into the Supabase 'traces' table."""
+    url = f"{_base_url()}/rest/v1/traces"
+    headers = _headers(get_settings().supabase_service_role_key)
+    
+    # فیلدهای id و created_at اضافه شدند تا دیتابیس ارور ندهد
+    payload = {
+        "id": str(uuid.uuid4()),  
+        "chat_id": chat_id,
+        "workflow": workflow, 
+        "retriever_time_ms": retriever_time_ms,
+        "generator_time_ms": generator_time_ms,
+        "validator_time_ms": validator_time_ms,
+        "success": success,
+        "created_at": _now_iso()
+    }
+    
+    try:
+        with httpx.Client(timeout=10.0) as client:
+            response = client.post(url, headers=headers, json=payload)
+            
+            # در صورتی که سوپابیس ارور بدهد، متن ارور را در ترمینال چاپ می‌کنیم تا متوجه شویم
+            if response.status_code >= 400:
+                logger.error(f"❌ ارور از سمت دیتابیس در ثبت Trace: {response.text}")
+                
+            response.raise_for_status()
+            logger.info(f"✅ زمان‌بندی گراف برای چت {chat_id} با موفقیت ذخیره شد.")
+            
+    except Exception as exc:
+        logger.error(f"❌ خطا در اجرای تابع save_workflow_trace: {str(exc)}")

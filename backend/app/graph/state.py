@@ -46,6 +46,10 @@ class AgentState(TypedDict):
     documents: Optional[List[dict]]
     
     response: Optional[str]
+    
+    retriever_time_ms: int
+    validator_time_ms: int
+    generator_time_ms: int
 
 
 class RouteDecision(BaseModel):

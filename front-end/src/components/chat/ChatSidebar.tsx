@@ -98,8 +98,6 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
     }
   };
 
-
-
   return (
     <aside className="relative flex h-full w-[280px] shrink-0 flex-col bg-gradient-to-b from-[#0B0F19] via-[#0A0E17] to-[#080C14] border-r border-white/[0.06]">
       {/* Background Glow */}
@@ -204,15 +202,10 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
                 </p>
                 <ul className="space-y-0.5">
                   {groupChats.map((chat) => {
-                   console.log("RAW:", JSON.stringify(chat.title));
-                    const displayTitle = (() => {
-                      try {
-                        const parsed = JSON.parse(chat.title);
-                        return parsed.title ?? chat.title;
-                      } catch {
-                        return chat.title;
-                      }
-                    })();
+                    
+                    // --- بخش اصلاح شده: چون بک‌اند مستقیماً متن کاربر را ذخیره می‌کند، نیازی به پارس کردن نیست ---
+                    const displayTitle = chat.title || "New Chat";
+                    
                     const isActive = pathname === `/chatbot/chat/${chat.id}`;
                     return (
                       <li key={chat.id}>

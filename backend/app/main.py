@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from app.config import get_settings
 # وارد کردن روترها از پوشه مربوطه
-from app.routers import video, chats
+from app.routers import video, chats,dashboard
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     # --- اتصال روترهای تفکیک‌شده به اپلیکیشن اصلی ---
     app.include_router(video.router)
     app.include_router(chats.router)
+    app.include_router(dashboard.router)
 
     # --- اندپوینت‌های عمومی سرور ---
     @app.get("/health", response_model=HealthResponse, tags=["System"])

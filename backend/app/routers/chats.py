@@ -16,6 +16,7 @@ from app.chat_store import (
     save_message,
     update_chat_title,
     update_chat_video_id,
+    save_workflow_trace,
 )
 
 logger = logging.getLogger(__name__)
@@ -153,16 +154,48 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
 
         search_scope = "single_video" if request.video_id else "general"
 
+        # اضافه کردن فیلدهای زمان به وضعیت اولیه گراف
         initial_state = {
             "messages": [HumanMessage(content=request.query)],
             "query": request.query,
             "user_id": request.user_id,
             "video_id": request.video_id,
             "search_scope": search_scope,
+            "next_node": None,
+            "documents": None,
             "response": None,
+            "retriever_time_ms": 0,
+            "validator_time_ms": 0,
+            "generator_time_ms": 0,
         }
 
+        # اجرای گراف
         result = await get_agent_graph().ainvoke(initial_state)
+        
+        logger.info("=== LANGGRAPH FINAL OUTPUT STATE ===")
+        logger.info(f"Next Node: {result.get('next_node')}")
+        logger.info(f"Retriever Time: {result.get('retriever_time_ms')} ms")
+        logger.info(f"Validator Time: {result.get('validator_time_ms')} ms")
+        logger.info(f"Generator Time: {result.get('generator_time_ms')} ms")
+        logger.info("====================================")
+
+        # --- ذخیره اطلاعات گراف (Traces) در دیتابیس ---
+        workflow_type = "qa"
+        if result.get("next_node") == "video_summary" or search_scope == "video_summary":
+            workflow_type = "video_summary"
+        elif search_scope == "general":
+            workflow_type = "general"
+
+        await asyncio.to_thread(
+            save_workflow_trace,
+            chat_id=target_chat_id,
+            workflow=workflow_type,
+            retriever_time_ms=int(result.get("retriever_time_ms") or 0),
+            validator_time_ms=int(result.get("validator_time_ms") or 0),
+            generator_time_ms=int(result.get("generator_time_ms") or 0),
+            success=bool(result.get("response"))
+        )
+        # ---------------------------------------------
 
         if not result or "response" not in result or not result["response"]:
             raise HTTPException(status_code=500, detail="پاسخی از مدل دریافت نشد.")
