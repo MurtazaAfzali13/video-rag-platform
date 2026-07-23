@@ -103,7 +103,7 @@ export function VideoTimelinePanel({
 
     setIsProcessing(true);
     setProcessStatus("loading");
-  clearTimeline();
+    clearTimeline();
     try {
       const actualChatId = !chatId || chatId === "new" ? null : chatId;
 
@@ -125,7 +125,6 @@ export function VideoTimelinePanel({
         setActiveVideoId(videoId);
         onVideoBound?.(videoId);
         setVideoTitle(data.title || `YouTube Video — ${videoId}`);
-        // clearTimeline();
 
         setTimeout(() => {
           setShowUrlInput(false);
@@ -180,19 +179,17 @@ export function VideoTimelinePanel({
   return (
     <section 
       className={cn(
-        "relative flex flex-col overflow-hidden bg-gradient-to-b from-[#0B0F19] via-[#090D17] to-[#070B14] transition-all duration-300",
+        "relative flex flex-col overflow-hidden bg-[#0A0D18] transition-all duration-300",
         isFullscreen
           ? "fixed inset-0 z-50 h-full w-full"
           : "h-auto md:h-full md:max-h-screen md:min-w-[400px] md:flex-1 md:border-r md:border-white/[0.06]"
       )}
     >
-      {/* Ambient Glow */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-purple-600/6 via-transparent to-transparent" />
-      <div className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 w-[300px] h-[100px] bg-purple-600/10 blur-[80px]" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-purple-600/5 via-transparent to-transparent" />
 
       {/* Video Player */}
       <div className="shrink-0 p-0 md:p-5 md:pb-3 z-10">
-        <div className="relative overflow-hidden md:rounded-2xl border-0 md:border border-white/[0.08] bg-black/60 shadow-2xl shadow-purple-500/5 md:backdrop-blur-sm group">
+        <div className="relative overflow-hidden md:rounded-2xl border-0 md:border border-white/[0.08] bg-black/60 shadow-2xl shadow-purple-500/5 group">
           <div className="relative aspect-video w-full">
             {currentVideoId ? (
               <iframe
@@ -222,10 +219,8 @@ export function VideoTimelinePanel({
             )}
           </div>
 
-          {/* Gradient overlay on video */}
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
           
-          {/* Fullscreen button */}
           {currentVideoId && (
             <button
               onClick={() => setIsFullscreen(!isFullscreen)}
@@ -236,7 +231,6 @@ export function VideoTimelinePanel({
           )}
         </div>
 
-        {/* Video Meta — desktop only */}
         <div className="mt-4 hidden items-start justify-between gap-3 md:flex">
           <div className="flex-1 min-w-0">
             <h2 className="text-base font-semibold text-white truncate tracking-tight">
@@ -258,7 +252,6 @@ export function VideoTimelinePanel({
           </button>
         </div>
 
-        {/* URL Input Panel — desktop only */}
         {showUrlInput && (
           <div className="mt-3 hidden animate-in fade-in slide-in-from-top-2 duration-200 md:block">
             <div className="relative bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4 space-y-3">
@@ -309,57 +302,36 @@ export function VideoTimelinePanel({
                   )}
                 </button>
               </div>
-
-              {processStatus === "loading" && (
-                <div className="flex items-center gap-2.5 text-xs text-purple-400 animate-pulse">
-                  <Loader2 className="size-3.5 animate-spin" />
-                  <span>Extracting transcript and analyzing video…</span>
-                </div>
-              )}
-              {processStatus === "success" && (
-                <div className="flex items-center gap-2.5 text-xs text-emerald-400 animate-in fade-in">
-                  <CheckCircle className="size-3.5" />
-                  <span>Video processed successfully! Ask questions to generate timestamps.</span>
-                </div>
-              )}
-              {processStatus === "error" && (
-                <div className="flex items-center gap-2.5 text-xs text-red-400 animate-in fade-in">
-                  <AlertCircle className="size-3.5" />
-                  <span>Invalid URL. Please check and try again.</span>
-                </div>
-              )}
             </div>
           </div>
         )}
       </div>
 
-      {/* Tabs — desktop only */}
       <div className="hidden min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 md:flex">
         <Tabs defaultValue="timeline" className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="w-full shrink-0 bg-white/5 backdrop-blur-sm border border-white/10 rounded-xl p-1 gap-1">
+          <TabsList className="w-full shrink-0 bg-[#121626]/60 border border-white/5 rounded-xl p-1 gap-1">
             <TabsTrigger
               value="timeline"
-              className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-purple-700 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/20 rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
+              className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-purple-600/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
             >
               <Clock className="size-3.5" />
               Timeline
-              <span className="ml-1 text-[10px] bg-white/10 px-1.5 py-0.5 rounded">
+              <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
                 {timelineItems.length}
               </span>
             </TabsTrigger>
             <TabsTrigger
               value="transcript"
-              className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-gradient-to-r data-[state=active]:from-purple-600 data-[state=active]:to-purple-700 data-[state=active]:text-white data-[state=active]:shadow-lg data-[state=active]:shadow-purple-500/20 rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
+              className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-purple-600/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
             >
               <FileText className="size-3.5" />
               Highlights
-              <span className="ml-1 text-[10px] bg-white/10 px-1.5 py-0.5 rounded">
+              <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
                 {transcriptLines.length}
               </span>
             </TabsTrigger>
           </TabsList>
 
-          {/* Timeline Content List */}
           <TabsContent
             value="timeline"
             className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
@@ -367,50 +339,57 @@ export function VideoTimelinePanel({
             {timelineItems.length === 0 ? (
               renderEmptyState()
             ) : (
-              <ul className="space-y-3 pr-1 pb-4">
+              <ul className="space-y-1.5 pr-1 pb-4">
                 {timelineItems.map((item) => (
                   <li key={item.id}>
                     <button
                       type="button"
                       onClick={() => handleTimelineClick(item)}
                       className={cn(
-                        "group relative flex w-full items-center gap-4 rounded-xl p-3 text-left transition-all duration-200 overflow-hidden border",
+                        "group w-full flex items-center gap-4 rounded-xl p-3.5 text-left transition-all duration-200 border",
                         activeTimestampId === item.id
-                          ? "border-purple-500/50 bg-purple-600/10 shadow-lg shadow-purple-500/5"
-                          : "border-transparent hover:bg-white/[0.02]"
+                          ? "border-purple-600/70 bg-[#251e3f]/40 shadow-sm"
+                          : "border-transparent hover:bg-white/[0.03]"
                       )}
                     >
-                      {/* Left Side: Circular Video Logo Container */}
                       <div
                         className={cn(
                           "flex size-9 shrink-0 items-center justify-center rounded-full transition-all duration-300",
                           activeTimestampId === item.id
-                            ? "bg-purple-600 text-white"
-                            : "bg-purple-600/10 text-purple-400 group-hover:bg-purple-600 group-hover:text-white"
+                            ? "bg-[#8b5cf6] text-white shadow-md shadow-purple-600/20"
+                            : "bg-[#181a36] text-[#9333ea] group-hover:bg-[#8b5cf6] group-hover:text-white"
                         )}
                       >
-                        <Play className={cn("size-3.5 fill-current ml-0.5 transition-transform", activeTimestampId === item.id ? "scale-110" : "group-hover:scale-110")} />
+                        <Play className={cn(
+                          "size-3.5 fill-current ml-0.5 transition-transform", 
+                          activeTimestampId === item.id ? "scale-110" : "group-hover:scale-110"
+                        )} />
                       </div>
 
-                      {/* Middle Side: Precise Timestamp */}
                       <span
                         className={cn(
-                          "font-mono text-sm tabular-nums font-semibold shrink-0 min-w-[45px] transition-colors",
+                          "font-mono text-[15px] tabular-nums tracking-wide shrink-0 min-w-[45px] transition-colors",
                           activeTimestampId === item.id
-                            ? "text-purple-400"
-                            : "text-purple-400/70 group-hover:text-purple-400"
+                            ? "text-[#a78bfa] font-medium"
+                            : "text-[#8b5cf6] group-hover:text-[#a78bfa]"
                         )}
                       >
                         {item.time}
                       </span>
 
-                      {/* Right Side: Chapter Title & Description */}
-                      <div className="flex-1 min-w-0 pr-4">
-                        <h4 className="text-sm font-medium text-slate-200 group-hover:text-white transition-colors truncate">
+                      <div className="flex-1 min-w-0 pr-2">
+                        {/* 
+                          استفاده از line-clamp-1 باعث می‌شود اگر متن طولانی مثل
+                          "Using logical AND in React allows for conditional rendering..."
+                          را ارسال کنید، به صورت اتوماتیک فقط بخش اول آن "Using logical AND in React..." 
+                          نمایش داده شود و به عنوان یک سرفصل عالی عمل کند.
+                        */}
+                        <h4 className="text-[14px] font-medium text-slate-200 group-hover:text-white transition-colors line-clamp-1 leading-snug">
                           {item.title}
                         </h4>
+                        
                         {item.description && (
-                          <p className="text-xs text-slate-500 mt-0.5 line-clamp-1 group-hover:text-slate-400 transition-colors">
+                          <p className="text-[13px] text-slate-500 mt-1 line-clamp-1 group-hover:text-slate-400 transition-colors">
                             {item.description}
                           </p>
                         )}
@@ -422,7 +401,6 @@ export function VideoTimelinePanel({
             )}
           </TabsContent>
 
-          {/* Transcript Content List */}
           <TabsContent
             value="transcript"
             className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
@@ -438,8 +416,8 @@ export function VideoTimelinePanel({
                     className="group flex gap-4 p-3 rounded-xl transition-all duration-200 hover:bg-purple-600/10 cursor-pointer border border-transparent hover:border-purple-500/20"
                   >
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <Hash className="size-3 text-purple-400/50" />
-                      <span className="font-mono text-xs text-purple-400 tabular-nums font-semibold">
+                      <Hash className="size-3 text-[#8b5cf6]/60" />
+                      <span className="font-mono text-xs text-[#8b5cf6] tabular-nums font-medium">
                         {line.time}
                       </span>
                     </div>

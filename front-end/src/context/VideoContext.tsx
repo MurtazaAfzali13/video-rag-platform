@@ -34,7 +34,7 @@ interface VideoContextType {
 }
 
 const VideoContext = createContext<VideoContextType | null>(null);
-const STORAGE_KEY = "current_video_timeline";
+// STORAGE_KEY حذف شد تا دیتای کش شده لود نشود
 
 export function VideoProvider({ children }: { children: React.ReactNode }) {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
@@ -51,33 +51,10 @@ export function VideoProvider({ children }: { children: React.ReactNode }) {
     setTimelineItems([]);
     setTranscriptLines([]);
     setActiveTimestampId(null);
-    if (typeof window !== "undefined") {
-      localStorage.removeItem(STORAGE_KEY);
-    }
   }, []);
 
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const savedTimeline = localStorage.getItem(STORAGE_KEY);
-      if (savedTimeline) {
-        try {
-          const parsedItems = JSON.parse(savedTimeline);
-          if (parsedItems && parsedItems.length > 0) {
-            setTimelineItems(parsedItems);
-          }
-        } catch (e) {
-          console.error("Failed to parse timeline from localstorage", e);
-        }
-      }
-    }
-  }, []);
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      if (timelineItems.length > 0) {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(timelineItems));
-      }
-    }
-  }, [timelineItems]);
+  // UseEffect های مربوط به localStorage حذف شدند تا در ابتدای ورود هیچ دیتای ثابتی لود نشود.
+  
   return (
     <VideoContext.Provider
       value={{
