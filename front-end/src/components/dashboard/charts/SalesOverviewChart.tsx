@@ -1,3 +1,4 @@
+// components/dashboard/QuestionsOverviewChart.tsx
 "use client";
 
 import {
@@ -10,7 +11,7 @@ import {
   YAxis,
 } from "recharts";
 import { Card, SectionTitle } from "../shared";
-import { salesOverview } from "@/mock/dashboard";
+import { useDashboard } from "@/context/DashboardContext"; // مسیر ایمپورت را چک کنید
 
 function CustomTooltip({ active, payload, label }: any) {
   if (!active || !payload?.length) return null;
@@ -24,16 +25,28 @@ function CustomTooltip({ active, payload, label }: any) {
   );
 }
 
-export function SalesOverviewChart() {
+export function QuestionsOverviewChart() {
+  // گرفتن استیت و دیسپچ از کانتکست
+  const { state, dispatch } = useDashboard();
+  const { questionsData, isLoading, timeRange } = state;
+
+  const handleTimeRangeChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    dispatch({ 
+      type: "SET_TIME_RANGE", 
+      payload: e.target.value as "week" | "month" | "quarter" 
+    });
+  };
+
   return (
     <Card initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }}>
       <SectionTitle
         title="Questions Overview"
-        subtitle="Questions asked across all workspaces this week"
+        subtitle="Questions asked across all workspaces"
         action={
           <select
-            className="rounded-lg border border-white/[0.06] bg-gray-400 px-2.5 py-1.5 text-xs text-white/60 outline-none"
-            defaultValue="week"
+            className="rounded-lg border border-white/[0.06] bg-gray-700 px-2.5 py-1.5 text-xs text-white/60 outline-none cursor-pointer"
+            value={timeRange}
+            onChange={handleTimeRangeChange}
             aria-label="Select time range"
           >
             <option value="week">This Week</option>
@@ -42,9 +55,17 @@ export function SalesOverviewChart() {
           </select>
         }
       />
-      <div className="h-64 px-2 pb-4 pt-4 sm:h-72 sm:px-4">
+      <div className="h-64 px-2 pb-4 pt-4 sm:h-72 sm:px-4 relative">
+        
+        {/* نمایش لودینگ هنگام دریافت اطلاعات */}
+        {isLoading && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm rounded-xl">
+            <span className="text-white/70 text-sm">Loading data...</span>
+          </div>
+        )}
+
         <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={salesOverview} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+          <AreaChart data={questionsData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
             <defs>
               <linearGradient id="salesGradient" x1="0" y1="0" x2="0" y2="1">
                 <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.4} />
