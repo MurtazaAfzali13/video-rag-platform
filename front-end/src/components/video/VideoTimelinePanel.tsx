@@ -41,7 +41,9 @@ export function VideoTimelinePanel({
     activeVideoId,
     setActiveVideoId,
     timelineItems,
+    setTimelineItems,
     transcriptLines,
+    setTranscriptLines,
     activeTimestampId,
     setActiveTimestampId,
     clearTimeline,
@@ -104,6 +106,7 @@ export function VideoTimelinePanel({
     setIsProcessing(true);
     setProcessStatus("loading");
     clearTimeline();
+
     try {
       const actualChatId = !chatId || chatId === "new" ? null : chatId;
 
@@ -125,6 +128,14 @@ export function VideoTimelinePanel({
         setActiveVideoId(videoId);
         onVideoBound?.(videoId);
         setVideoTitle(data.title || `YouTube Video — ${videoId}`);
+
+        if (data.timeline_items) {
+          setTimelineItems(data.timeline_items);
+        }
+        if (data.transcript_lines) {
+          setTranscriptLines(data.transcript_lines);
+        }
+     
 
         setTimeout(() => {
           setShowUrlInput(false);
@@ -177,7 +188,7 @@ export function VideoTimelinePanel({
   );
 
   return (
-    <section 
+    <section
       className={cn(
         "relative flex flex-col overflow-hidden bg-[#0A0D18] transition-all duration-300",
         isFullscreen
@@ -220,7 +231,7 @@ export function VideoTimelinePanel({
           </div>
 
           <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-black/60 to-transparent pointer-events-none" />
-          
+
           {currentVideoId && (
             <button
               onClick={() => setIsFullscreen(!isFullscreen)}
@@ -361,7 +372,7 @@ export function VideoTimelinePanel({
                         )}
                       >
                         <Play className={cn(
-                          "size-3.5 fill-current ml-0.5 transition-transform", 
+                          "size-3.5 fill-current ml-0.5 transition-transform",
                           activeTimestampId === item.id ? "scale-110" : "group-hover:scale-110"
                         )} />
                       </div>
@@ -387,7 +398,7 @@ export function VideoTimelinePanel({
                         <h4 className="text-[14px] font-medium text-slate-200 group-hover:text-white transition-colors line-clamp-1 leading-snug">
                           {item.title}
                         </h4>
-                        
+
                         {item.description && (
                           <p className="text-[13px] text-slate-500 mt-1 line-clamp-1 group-hover:text-slate-400 transition-colors">
                             {item.description}

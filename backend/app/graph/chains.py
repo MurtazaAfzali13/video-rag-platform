@@ -1,17 +1,15 @@
 # app/graph/chains.py
-import json
 import logging
-from typing import Any, List, Optional
+from typing import Any
 
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
 from langchain_openai import ChatOpenAI
 
 from app.config import get_settings
 from app.graph.state import (
     RouteDecision, 
     GradeDocuments, 
-    GroundedAnswer,
+    FinalAnswerSchema, # جایگزین GroundedAnswer شد
     VideoSummarySchema
 )
 
@@ -68,18 +66,16 @@ def create_validator_chain() -> Any:
 
 def create_generator_chain() -> Any:
     """Create chain for grounded answer generation with structured output."""
+    # متغیر transparency_note اضافه شده تا به صورت داینامیک از گره تزریق شود
     system_prompt = (
         "You are an expert educational assistant.\n"
-        "{transparency_note}"
-        "Answer the user's question using ONLY the provided Context below.\n"
+        "{transparency_note}\n"
+        "Your task is to answer the user's question using ONLY the provided Context.\n"
         "RULES:\n"
-        "1. Do not use outside knowledge. If the context is insufficient, set has_sufficient_context=false "
-        "and write in `answer` that you don't know, in the same language as the user's query.\n"
-        "2. Write `answer` in the same language the user asked in (Persian/Dari or English).\n"
-        "3. Do NOT write citations, URLs, or timestamps inside `answer` itself — put every source as a "
-        "separate structured entry in `sources`, using the exact video_id/url/timestamp values shown in the Context "
-        "labels (e.g. [VIDEO_SOURCE 1], [WEB_SOURCE 2]). Never invent a URL or placeholder text.\n"
-        "4. If there are no sources, return an empty sources list.\n\n"
+        "1. Do not use outside knowledge.\n"
+        "2. Write the main response in the 'answer' field using markdown.\n"
+        "3. For video sources, cite them inline using [MM:SS] format inside the 'answer' field.\n"
+        "4. For web sources, extract their URL and Title and put them in the 'web_sources' list array. Do NOT paste raw URLs in the text.\n"
         "Context:\n{context}"
     )
     
@@ -89,7 +85,8 @@ def create_generator_chain() -> Any:
     ])
     
     settings = get_settings()
-    return prompt | get_llm(settings.generator_model).with_structured_output(GroundedAnswer)
+    # استفاده از FinalAnswerSchema برای یکپارچگی با State
+    return prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
 
 
 def create_summary_chain() -> Any:

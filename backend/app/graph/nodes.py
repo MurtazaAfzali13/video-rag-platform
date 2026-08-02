@@ -1,30 +1,31 @@
+# app/graph/nodes.py
 import json
 import logging
+import time
 from typing import Any
 
-import time
-
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from langchain_openai import ChatOpenAI
 from langchain_pinecone import PineconeVectorStore
-
 from langchain_community.tools.tavily_search import TavilySearchResults
 
 from app.config import get_settings
-from app.graph.state import AgentState, FinalAnswerSchema, VideoSummarySchema, RouteDecision, GradeDocuments,WebSourceSchema
+from app.graph.state import (
+    AgentState, 
+    FinalAnswerSchema, 
+    VideoSummarySchema, 
+    RouteDecision, 
+    GradeDocuments
+)
 from app.ingestion import _get_embeddings
 
-logger = logging.getLogger(__name__)
+# وارد کردن زنجیره‌ها از فایل chains.py
+from app.graph.chains import (
+    create_supervisor_chain,
+    create_validator_chain,
+    create_generator_chain,
+    create_summary_chain
+)
 
-def get_llm(model_name: str) -> ChatOpenAI:
-    """Initialize and return the LLM configured via OpenRouter based on the requested model."""
-    settings = get_settings()
-    return ChatOpenAI(
-        model=model_name,
-        api_key=settings.openrouter_api_key,
-        base_url=settings.openrouter_base_url,
-    )
+logger = logging.getLogger(__name__)
 
 
 def _fetch_video_context(
@@ -71,21 +72,8 @@ def supervisor_node(state: AgentState) -> dict[str, Any]:
     query = state["query"]
     search_scope = state.get("search_scope", "single_video")
     
-    system_prompt = (
-        "You are a routing supervisor in an educational AI system.\n"
-        "Your job is to analyze the user's query and the UI context (search_scope) "
-        "to determine which expert agent should handle the request.\n\n"
-        "Search Scope Constraint:\n"
-        "- If search_scope is 'general', you MUST route to 'general_qa' unless it's explicitly a summary request.\n"
-        "- If search_scope is 'single_video', route to 'video_qa' or 'video_summary'."
-    )
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "Query: {query}\nSearch Scope: {search_scope}"),
-    ])
-    
-    settings = get_settings()
-    router_chain = prompt | get_llm(settings.supervisor_model).with_structured_output(RouteDecision)
+    # استفاده از Chain متمرکز
+    router_chain = create_supervisor_chain()
     
     decision: RouteDecision = router_chain.invoke({
         "query": query, 
@@ -153,23 +141,14 @@ def validator_node(state: AgentState) -> dict[str, Any]:
         
     context_text = "\n\n".join([f"Content: {d['page_content']}" for d in documents])
     
-    system_prompt = (
-        "You are a strict quality control grader.\n"
-        "Your task is to assess whether the provided video transcript excerpts contain "
-        "explicit, factual, and sufficient information to answer the user's question.\n"
-        "If the context is irrelevant, generic, or lacks the direct answer, you MUST select 'no'.\n"
-        "Do not make assumptions. Be extremely strict."
-    )
+    # استفاده از Chain متمرکز
+    grader_chain = create_validator_chain()
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"),
-    ])
+    result: GradeDocuments = grader_chain.invoke({
+        "query": query, 
+        "context": context_text
+    })
     
-    settings = get_settings()
-    grader_chain = prompt | get_llm(settings.supervisor_model).with_structured_output(GradeDocuments)
-    
-    result: GradeDocuments = grader_chain.invoke({"query": query, "context": context_text})
     logger.info(f"Validation Score: {result.binary_score} | Reason: {result.explanation}")
     
     elapsed_ms = int((time.time() - start_time) * 1000)
@@ -188,18 +167,15 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
     web_search_tool = TavilySearchResults(max_results=3)
     
     try:
-        # فراخوانی ابزار بر اساس ساختار قدیمی که در سیستم شما کار می‌کرد
         docs = web_search_tool.invoke({"query": query})
     except Exception as e:
         logger.error(f"Tavily Search failed: {str(e)}")
         docs = []
 
-    # ایمن‌سازی بسیار قوی: بررسی تمام حالت‌های ممکن خروجی
     if isinstance(docs, str):
         try:
             docs = json.loads(docs)
         except json.JSONDecodeError:
-            # اگر فقط یک رشته متنی خام بود، آن را به عنوان یک محتوای جستجو در نظر می‌گیریم
             docs = [{"content": docs, "url": "External Web Source"}]
 
     web_results = []
@@ -207,7 +183,6 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
     if isinstance(docs, list):
         for d in docs:
             if isinstance(d, dict):
-                # خروجی استاندارد
                 web_results.append({
                     "page_content": d.get("content", ""),
                     "title": "جستجوی وب",
@@ -216,7 +191,6 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
                     "source_type": "web"
                 })
             elif isinstance(d, str):
-                # اگر لیست حاوی رشته‌ها بود، آن رشته را به عنوان متن محتوا قرار بده
                 web_results.append({
                     "page_content": d,
                     "title": "جستجوی وب",
@@ -228,6 +202,7 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
                 logger.warning(f"Unexpected item in Tavily results: {d}")
 
     return {"documents": web_results}
+
 
 def generate_answer_node(state: AgentState) -> dict[str, Any]:
     """Synthesize the final grounded response with structured sources for UI rendering."""
@@ -247,8 +222,8 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         else:
             v_id = doc.get("video_id", "Unknown")
             v_title = doc.get("title", "Unknown Title")
-            start_time = doc.get("start_time", 0)
-            minutes, seconds = int(start_time // 60), int(start_time % 60)
+            start_time_val = doc.get("start_time", 0)
+            minutes, seconds = int(start_time_val // 60), int(start_time_val % 60)
             context_parts.append(
                 f"ویدیو: {v_title} (ID: {v_id}) - زمان [{minutes:02d}:{seconds:02d}]:\n{doc['page_content']}"
             )
@@ -260,36 +235,22 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         transparency_note = (
             "توجه مهم: اطلاعات در ویدیو یافت نشد. این پاسخ بر اساس 'جستجوی وب' است. این موضوع را حتما به کاربر بگو.\n\n"
         )
-        
-    system_prompt = (
-        "You are an expert educational assistant.\n"
-        f"{transparency_note}"
-        "Your task is to answer the user's question using ONLY the provided Context.\n"
-        "RULES:\n"
-        "1. Do not use outside knowledge.\n"
-        "2. Write the main response in the 'answer' field using markdown.\n"
-        "3. For video sources, cite them inline using [MM:SS] format inside the 'answer' field.\n"
-        "4. For web sources, extract their URL and Title and put them in the 'web_sources' list array. Do NOT paste raw URLs in the text.\n"
-        "Context:\n{context}"
-    )
     
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", system_prompt),
-        ("human", "{query}"),
-    ])
+    # استفاده از Chain متمرکز و پاس دادن تمام متغیرهای مورد نیاز
+    generator_chain = create_generator_chain()
     
-    settings = get_settings()
-    chain = prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
-    result: FinalAnswerSchema = chain.invoke({"query": query, "context": context_text})
+    result: FinalAnswerSchema = generator_chain.invoke({
+        "query": query, 
+        "context": context_text,
+        "transparency_note": transparency_note
+    })
     
     # ۲. جمع‌آوری و یکپارچه‌سازی تمام منابع (ویدیو + وب) برای فرانت‌اِند
     ui_sources = []
     seen_video_timestamps = set()
 
-    # استخراج منابع ویدیو از داکیومنت‌های بازیابی شده
     for doc in documents:
         if doc.get("source_type") == "video":
-            # جلوگیری از تکرار کارت‌ها برای یک زمان مشخص از یک ویدیو
             source_key = (doc.get("video_id"), doc.get("start_time"))
             if source_key not in seen_video_timestamps:
                 seen_video_timestamps.add(source_key)
@@ -297,10 +258,9 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
                     "source_type": "video",
                     "video_id": doc.get("video_id"),
                     "title": doc.get("title"),
-                    "start_time": doc.get("start_time")  # ثانیه خام برای کنترل پلیر
+                    "start_time": doc.get("start_time")  
                 })
 
-    # اضافه کردن منابع وب استخراج شده توسط LLM
     for web_src in result.web_sources:
         ui_sources.append({
             "source_type": "web",
@@ -308,7 +268,7 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
             "url": web_src.url
         })
 
-    # ۳. بسته‌بندی نهایی خروجی به صورت JSON با مشخص کردن type
+    # ۳. بسته‌بندی نهایی خروجی به صورت JSON
     response_payload = {
         "type": "qa_response",
         "answer": result.answer,
@@ -329,18 +289,13 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
 
     context = _fetch_video_context(user_id, video_id, query, k=4)
 
-    prompt = ChatPromptTemplate.from_messages([
-        ("system", (
-            "You are an academic video analyst. Using the timestamped transcript excerpts below, "
-            "produce a structured summary of the video.\n"
-            "Transcript excerpts:\n{context}"
-        )),
-        ("human", "{query}"),
-    ])
-
-    settings = get_settings()
-    chain = prompt | get_llm(settings.generator_model).with_structured_output(VideoSummarySchema)
-    summary = chain.invoke({"context": context, "query": query})
+    # استفاده از Chain متمرکز
+    summary_chain = create_summary_chain()
+    
+    summary = summary_chain.invoke({
+        "context": context, 
+        "query": query
+    })
 
     if isinstance(summary, VideoSummarySchema):
         summary_dict = summary.model_dump()

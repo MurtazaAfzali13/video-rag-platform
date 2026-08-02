@@ -32,11 +32,10 @@ interface Props {
   messages: Message[];
   isLoading: boolean;
   isTyping: boolean;
-  onSendMessage: (content: string) => void;
+  onSendMessage: (content: string, type: QuestionType) => void; 
   onRegenerate?: () => void;
   onClearChat?: () => void;
 }
-
 type QuestionType = "general" | "about_video";
 
 // ==========================================
@@ -162,33 +161,56 @@ const AssistantContent = memo(function AssistantContent({
   // --- حالت ۱: خلاصه ویدیو (Video Summary) ---
   if (parsedContent && (parsedContent.type === 'video_summary' || parsedContent.key_takeaways)) {
     const takeaways = parsedContent.key_takeaways || [];
+    
+    // 1. گروه‌بندی Takeawayها بر اساس تایم‌استمپ
+    const groupedTakeaways = takeaways.reduce((acc: any, item: any) => {
+      const time = item.timestamp || "general";
+      if (!acc[time]) acc[time] = [];
+      acc[time].push(item.point);
+      return acc;
+    }, {});
+
     return (
       <div className="flex w-full flex-col gap-4 text-sm">
         <div className="flex items-center gap-2 border-b border-purple-500/20 pb-2 text-xs text-purple-400">
           <Sparkles className="size-4" />
           <span className="font-medium">AI Video Summary</span>
         </div>
+        
         {parsedContent.overall_summary && (
           <p className="leading-relaxed text-slate-300">{parsedContent.overall_summary}</p>
         )}
-        {takeaways.length > 0 && (
-          <div className="mt-2 space-y-3">
-            {takeaways.map((item: any, i: number) => (
-              <div key={i} className="flex flex-col gap-1.5 rounded-lg bg-white/5 p-3 border border-white/5">
-                <p className="text-slate-300 text-sm leading-relaxed">{item.point}</p>
-                {item.timestamp && (
-                  <div className="flex justify-end">
-                    <TimestampPill time={item.timestamp} onClick={onJumpToTime} />
+
+        {/* 2. رندر کردن گروه‌بندی شده */}
+        {Object.keys(groupedTakeaways).length > 0 && (
+          <div className="mt-2 space-y-4">
+            {Object.entries(groupedTakeaways).map(([time, points]: [string, any], i: number) => (
+              <div key={i} className="flex flex-col gap-2 rounded-lg bg-white/5 p-3 border border-white/5 relative">
+                {/* نمایش تایم‌استمپ فقط یک بار در بالای گروه (اگر general نبود) */}
+                {time !== "general" && (
+                  <div className="absolute -top-3 right-3">
+                    <TimestampPill time={time} onClick={onJumpToTime} />
                   </div>
                 )}
+                
+                {/* نمایش لیست نکات مربوط به این زمان */}
+                <ul className={`space-y-1.5 text-slate-300 text-sm leading-relaxed ${time !== "general" ? "mt-3" : ""}`}>
+                  {points.map((point: string, idx: number) => (
+                    <li key={idx} className="flex gap-2">
+                      <span className="text-purple-500 mt-1">•</span>
+                      <span>{point}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ))}
           </div>
         )}
+        
         {parsedContent.academic_conclusion && (
-           <div className="text-xs italic border-t border-white/10 pt-2 mt-2 text-slate-400">
-             {parsedContent.academic_conclusion}
-           </div>
+          <div className="text-xs italic border-t border-white/10 pt-2 mt-2 text-slate-400">
+            {parsedContent.academic_conclusion}
+          </div>
         )}
       </div>
     );
@@ -232,9 +254,6 @@ const AssistantContent = memo(function AssistantContent({
                       <Globe className="size-4 text-blue-400 shrink-0 mt-0.5" />
                     )}
                     <div className="min-w-0 flex-1">
-                      {/* <p className="text-xs font-medium text-slate-300 truncate" title={source.title}>
-                        {source.title}
-                      </p> */}
                       {source.source_type === 'video' ? (
                         <span className="mt-1 inline-block bg-purple-900/50 text-purple-300 text-[10px] font-mono px-1.5 py-0.5 rounded">
                           {formatTimestamp(source.start_time || 0)}
@@ -356,7 +375,7 @@ export default function ChatInterface({
     e?.preventDefault();
     if (!input.trim() || isTyping) return;
 
-    onSendMessage(input.trim());
+    onSendMessage(input.trim(), questionType); 
     setInput("");
   };
 
