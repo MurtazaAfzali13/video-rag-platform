@@ -15,7 +15,15 @@ export function WorkflowDistributionCard({ userId }: { userId: string }) {
     }
   }, [userId]);
 
+  // محاسبه مجموع واقعی مقادیر
   const total = workflowDistribution.reduce((sum, d) => sum + d.value, 0);
+
+  // محاسبه مجدد درصدها به صورت دقیق در فرانت‌اند
+  const correctedDistribution = workflowDistribution.map(d => ({
+    ...d,
+    // جلوگیری از تقسیم بر صفر و گرد کردن تا یک رقم اعشار
+    percentage: total > 0 ? Number(((d.value / total) * 100).toFixed(1)) : 0 
+  }));
 
   if (isLoading) {
     return (
@@ -37,8 +45,8 @@ export function WorkflowDistributionCard({ userId }: { userId: string }) {
     <Card initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }}>
       <SectionTitle title="AI Workflow Distribution" subtitle="Node execution share (LangGraph)" />
       <div className="p-5">
-        {workflowDistribution.length > 0 ? (
-          <DonutChart data={workflowDistribution} centerLabel="Total Runs" centerValue={total.toLocaleString("en-US")} />
+        {correctedDistribution.length > 0 ? (
+          <DonutChart data={correctedDistribution} centerLabel="Total Runs" centerValue={total.toLocaleString("en-US")} />
         ) : (
           <div className="flex h-48 items-center justify-center text-xs text-white/40">
             هیچ تِرِیس یا جریانی برای این کاربر ثبت نشده است.

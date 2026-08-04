@@ -23,13 +23,12 @@ export default function DashboardPage() {
         {/* Row 1: KPI metric cards */}
         <MetricsGrid />
 
-        {/* Row 2: Analytics + Workflow distribution + Live activity */}
+        
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
           <div className="xl:col-span-1">
             <SalesOverviewChart />
           </div>
           <div className="xl:col-span-1">
-            {/* پاس دادن userId برای رفع ارور تایپ‌اسکریپت و دریافت دیتای صحیح */}
             <WorkflowDistributionCard userId={currentUserId} />
           </div>
           <div className="xl:col-span-1">

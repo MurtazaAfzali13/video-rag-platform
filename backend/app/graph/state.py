@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, TypedDict, Optional, List ,Literal
+from typing import Annotated, TypedDict, Optional, List, Literal
 
 from langchain_core.messages import AnyMessage
 from langgraph.graph.message import add_messages
@@ -17,8 +17,12 @@ class KeyTakeaway(BaseModel):
         description="A concise, high-impact summary of the concept or topic covered.",
     )
 
-
 class VideoSummarySchema(BaseModel):
+    # این فیلد برای فرانت‌اند ضروری است
+    type: Literal["video_summary"] = Field(
+        default="video_summary", 
+        description="Always set this to 'video_summary'."
+    )
     title: str = Field(..., description="An optimized, descriptive title for the video.")
     overall_summary: str = Field(
         ...,
@@ -40,7 +44,7 @@ class AgentState(TypedDict):
     user_id: str
     video_id: Optional[str]
     
-    search_scope: Literal["general","single_video"]
+    search_scope: Literal["general", "single_video"]
     next_node: Optional[str]
     
     documents: Optional[List[dict]]
@@ -53,7 +57,7 @@ class AgentState(TypedDict):
 
 
 class RouteDecision(BaseModel):
-    reasoning: str=Field(
+    reasoning: str = Field(
         ..., 
         description="Briefly explain your reasoning for choosing the intent based on the user query and search_scope."
     )
@@ -76,17 +80,41 @@ class GradeDocuments(BaseModel):
         description="Briefly explain why the documents are relevant or missing the required information."
     )
     
-    
-class WebSourceSchema(BaseModel):
-    title: str = Field(..., description="A short, descriptive title for the web page.")
-    url: str = Field(..., description="The URL of the web source.")
+
+# --- کلاس SourceSchema که فراموش شده بود اضافه شد ---
+class SourceSchema(BaseModel):
+    source_type: Literal["video", "web"] = Field(
+        ..., 
+        description="Specify if the source is from a 'video' or 'web'."
+    )
+    start_time: Optional[int] = Field(
+        None, 
+        description="The exact start time in seconds (e.g., 214) if this is a video source."
+    )
+    title: Optional[str] = Field(
+        None, 
+        description="A short, catchy title for this specific video chapter or web page (e.g., 'React Algorithms')."
+    )
+    description: Optional[str] = Field(
+        None, 
+        description="A brief 1-sentence description of what is covered in this video segment. Leave null for web."
+    )
+    url: Optional[str] = Field(
+        None, 
+        description="The direct URL of the source if this is a web source."
+    )
+# ---------------------------------------------------
 
 class FinalAnswerSchema(BaseModel):
+    type: Literal["qa_response"] = Field(
+        default="qa_response", 
+        description="Always set this to 'qa_response'."
+    )
     answer: str = Field(
         ..., 
-        description="The main answer text in markdown format. Do NOT include raw web URLs inside this text."
+        description="The main answer text in markdown format. Do NOT include raw URLs or raw timestamps inside this text."
     )
-    web_sources: List[WebSourceSchema] = Field(
+    sources: List[SourceSchema] = Field(
         default=[], 
-        description="List of web sources used to answer the query. Empty if no web sources were used."
+        description="List of all sources (video timestamps and web links) used to generate this answer."
     )

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from youtube_transcript_api._errors import YouTubeTranscriptApiException
@@ -40,6 +41,10 @@ class ProcessVideoResponse(BaseModel):
     chat_id: str
     chunks_processed: int
     message: str
+    # فیلدهای اضافه‌شده برای تغذیه فرانت‌اند (VideoTimelinePanel)
+    title: Optional[str] = None
+    timeline_items: Optional[List[Dict[str, Any]]] = None
+    transcript_lines: Optional[List[Dict[str, Any]]] = None
 
 
 # --- Endpoints ---
@@ -83,6 +88,22 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
             request.user_id,
             video_id,
         )
+
+        # --- پردازش دیتا برای فرانت‌اند ---
+        def format_time(seconds: float) -> str:
+            mins = int(seconds // 60)
+            secs = int(seconds % 60)
+            return f"{mins:02d}:{secs:02d}"
+
+        formatted_transcript = []
+        if transcript:
+            for line in transcript:
+                formatted_transcript.append({
+                    "time": format_time(line.get("start", 0)),
+                    "text": line.get("text", "")
+                })
+
+        # دیتای پیش‌فرض (mock) حذف شد تا در صورت نبود سرفصل، سیستم حالت خالی (Empty State) را نمایش دهد.
         
     except YouTubeTranscriptApiException as exc:
         logger.error(f"Failed to fetch transcript for video {video_id}: {exc}")
@@ -108,4 +129,7 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
         chat_id=target_chat_id,
         chunks_processed=chunks_processed,
         message="ویدیو با موفقیت پردازش و به چت متصل شد.",
+        title=f"YouTube Video — {video_id}",
+        timeline_items=[],  # لیست خالی ارسال می‌شود تا اگر سرفصلی نبود، هیچ چیز پیش‌فرضی نشان ندهد
+        transcript_lines=formatted_transcript
     )

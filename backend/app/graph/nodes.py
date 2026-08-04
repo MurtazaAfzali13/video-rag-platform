@@ -236,7 +236,6 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
             "توجه مهم: اطلاعات در ویدیو یافت نشد. این پاسخ بر اساس 'جستجوی وب' است. این موضوع را حتما به کاربر بگو.\n\n"
         )
     
-    # استفاده از Chain متمرکز و پاس دادن تمام متغیرهای مورد نیاز
     generator_chain = create_generator_chain()
     
     result: FinalAnswerSchema = generator_chain.invoke({
@@ -245,28 +244,34 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         "transparency_note": transparency_note
     })
     
-    # ۲. جمع‌آوری و یکپارچه‌سازی تمام منابع (ویدیو + وب) برای فرانت‌اِند
+    # ۲. جمع‌آوری منابع (حل ارور web_sources)
     ui_sources = []
-    seen_video_timestamps = set()
-
-    for doc in documents:
-        if doc.get("source_type") == "video":
-            source_key = (doc.get("video_id"), doc.get("start_time"))
-            if source_key not in seen_video_timestamps:
-                seen_video_timestamps.add(source_key)
+    
+    # اولویت با منابعی است که LLM تولید کرده (چون title و description جذاب دارند)
+    if result.sources:
+        for src in result.sources:
+            ui_sources.append(src.model_dump(exclude_none=True))
+            
+    # فال‌بک: اگر LLM منبعی تولید نکرد اما داکیومنت داشتیم، دستی اضافه می‌کنیم 
+    # تا پنل فرانت‌اند خالی نماند!
+    if not ui_sources and documents:
+        seen_timestamps = set()
+        for doc in documents:
+            if doc.get("source_type") == "video":
+                st = doc.get("start_time")
+                if st not in seen_timestamps:
+                    seen_timestamps.add(st)
+                    ui_sources.append({
+                        "source_type": "video",
+                        "title": doc.get("title", "ارجاع به ویدیو"),
+                        "start_time": st
+                    })
+            elif doc.get("source_type") == "web":
                 ui_sources.append({
-                    "source_type": "video",
-                    "video_id": doc.get("video_id"),
-                    "title": doc.get("title"),
-                    "start_time": doc.get("start_time")  
+                    "source_type": "web",
+                    "title": doc.get("title", "منبع وب"),
+                    "url": doc.get("video_id") # در سرچ وب، آدرس url درون فیلد video_id ذخیره شده است
                 })
-
-    for web_src in result.web_sources:
-        ui_sources.append({
-            "source_type": "web",
-            "title": web_src.title,
-            "url": web_src.url
-        })
 
     # ۳. بسته‌بندی نهایی خروجی به صورت JSON
     response_payload = {
@@ -289,7 +294,6 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
 
     context = _fetch_video_context(user_id, video_id, query, k=4)
 
-    # استفاده از Chain متمرکز
     summary_chain = create_summary_chain()
     
     summary = summary_chain.invoke({

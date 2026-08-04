@@ -304,13 +304,14 @@ def save_workflow_trace(
     retriever_time_ms: int = 0, 
     generator_time_ms: int = 0, 
     validator_time_ms: int = 0, 
+    web_search_time_ms: int = 0,  
+    other_time_ms: int = 0,     
     success: bool = True
 ) -> None:
     """Saves the execution trace of LangGraph nodes into the Supabase 'traces' table."""
     url = f"{_base_url()}/rest/v1/traces"
     headers = _headers(get_settings().supabase_service_role_key)
     
-    # فیلدهای id و created_at اضافه شدند تا دیتابیس ارور ندهد
     payload = {
         "id": str(uuid.uuid4()),  
         "chat_id": chat_id,
@@ -318,6 +319,8 @@ def save_workflow_trace(
         "retriever_time_ms": retriever_time_ms,
         "generator_time_ms": generator_time_ms,
         "validator_time_ms": validator_time_ms,
+        "web_search_time_ms": web_search_time_ms, # <--- اضافه شد
+        "other_time_ms": other_time_ms,           # <--- اضافه شد
         "success": success,
         "created_at": _now_iso()
     }
@@ -326,7 +329,6 @@ def save_workflow_trace(
         with httpx.Client(timeout=10.0) as client:
             response = client.post(url, headers=headers, json=payload)
             
-            # در صورتی که سوپابیس ارور بدهد، متن ارور را در ترمینال چاپ می‌کنیم تا متوجه شویم
             if response.status_code >= 400:
                 logger.error(f"❌ ارور از سمت دیتابیس در ثبت Trace: {response.text}")
                 
