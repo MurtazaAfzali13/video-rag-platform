@@ -1,16 +1,81 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { ArrowDownRight, ArrowUpRight } from "lucide-react";
 import { Card, SectionTitle } from "../shared";
 import { cn } from "@/lib/dashboard-cn";
-import { aiHealthScore, healthSubMetrics } from "@/mock/dashboard";
+import { aiHealthScore as defaultHealthScore, healthSubMetrics as defaultHealthSubMetrics } from "@/mock/dashboard";
+import { useDashboard } from "@/context/DashboardContext";
 
 const RADIUS = 54;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
 
-export function AIHealthScore() {
-  const offset = CIRCUMFERENCE - (aiHealthScore.score / 100) * CIRCUMFERENCE;
+interface AIHealthScoreProps {
+  userId?: string;
+}
+
+export function AIHealthScore({ userId }: AIHealthScoreProps) {
+  const { state, fetchWorkflowDistribution, fetchMetrics } = useDashboard();
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchWorkflowDistribution(userId);
+    fetchMetrics(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const { score, label, subMetrics } = useMemo(() => {
+    const distribution = state.workflowDistribution;
+    if (distribution.length === 0) {
+      return {
+        score: defaultHealthScore.score,
+        label: defaultHealthScore.label,
+        subMetrics: defaultHealthSubMetrics,
+      };
+    }
+
+    const total = distribution.reduce((sum, d) => sum + d.value, 0);
+    const nodeShare = (nodeId: string) => {
+      const node = distribution.find((d) => d.id === nodeId);
+      if (!node || total === 0) return null;
+      return Number(((node.value / total) * 100).toFixed(1));
+    };
+
+    const retrievalShare = nodeShare("retriever");
+    const validationShare = nodeShare("validator");
+    const webSearchShare = nodeShare("web-search");
+
+    const mergedSubMetrics = defaultHealthSubMetrics.map((metric) => {
+      if (metric.id === "retrieval" && retrievalShare !== null) {
+        return { ...metric, value: retrievalShare };
+      }
+      if (metric.id === "validation" && validationShare !== null) {
+        return { ...metric, value: validationShare };
+      }
+      if (metric.id === "retry" && webSearchShare !== null) {
+        return { ...metric, label: "Web Search Fallbacks", value: webSearchShare };
+      }
+      return metric;
+    });
+
+    const derivedScore = Math.min(
+      100,
+      Math.round(
+        (retrievalShare ?? defaultHealthScore.score) * 0.4 +
+          (validationShare ?? defaultHealthScore.score) * 0.4 +
+          (100 - (webSearchShare ?? 12)) * 0.2
+      )
+    );
+
+    return {
+      score: derivedScore,
+      label: derivedScore >= 90 ? "Excellent" : derivedScore >= 75 ? "Good" : "Fair",
+      subMetrics: mergedSubMetrics,
+    };
+  }, [state.workflowDistribution]);
+
+  const offset = CIRCUMFERENCE - (score / 100) * CIRCUMFERENCE;
 
   return (
     <Card initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.1 }} glow>
@@ -40,13 +105,13 @@ export function AIHealthScore() {
             </defs>
           </svg>
           <div className="absolute flex flex-col items-center">
-            <span className="text-3xl font-bold text-white">{aiHealthScore.score}%</span>
-            <span className="text-xs font-medium text-emerald-400">{aiHealthScore.label}</span>
+            <span className="text-3xl font-bold text-white">{score}%</span>
+            <span className="text-xs font-medium text-emerald-400">{label}</span>
           </div>
         </div>
 
         <div className="grid w-full grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
-          {healthSubMetrics.map((m, i) => (
+          {subMetrics.map((m, i) => (
             <motion.div
               key={m.id}
               initial={{ opacity: 0, y: 10 }}

@@ -1,10 +1,12 @@
 "use client";
 
+import { useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { Card, SectionTitle } from "../shared";
 import { cn } from "@/lib/dashboard-cn";
-import { activities } from "@/mock/dashboard";
+import { activities as defaultActivities } from "@/mock/dashboard";
+import { useDashboard } from "@/context/DashboardContext";
 
 const colorMap: Record<string, string> = {
   blue: "bg-blue-500/10 text-blue-300 ring-blue-500/20",
@@ -16,7 +18,39 @@ const colorMap: Record<string, string> = {
   red: "bg-red-500/10 text-red-300 ring-red-500/20",
 };
 
-export function ActivityFeed() {
+export function ActivityFeed({ userId }: { userId?: string }) {
+  const { state, fetchMetrics, fetchWorkflowDistribution } = useDashboard();
+
+  useEffect(() => {
+    if (!userId) return;
+    fetchMetrics(userId);
+    fetchWorkflowDistribution(userId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userId]);
+
+  const displayActivities = useMemo(() => {
+    const webSearchCount = state.metricsData?.web_searches;
+    const validatorRuns = state.workflowDistribution.find((d) => d.id === "validator")?.value;
+
+    return defaultActivities.map((activity) => {
+      if (activity.type === "web_search" && webSearchCount !== undefined) {
+        return {
+          ...activity,
+          title: "Web search executed",
+          description: `Tavily · ${webSearchCount} total fallback${webSearchCount === 1 ? "" : "s"}`,
+        };
+      }
+      if (activity.type === "validator" && validatorRuns !== undefined) {
+        return {
+          ...activity,
+          title: `Validator executed ${validatorRuns} time${validatorRuns === 1 ? "" : "s"}`,
+          description: "Context relevance grading (LangGraph)",
+        };
+      }
+      return activity;
+    });
+  }, [state.metricsData, state.workflowDistribution]);
+
   return (
     <Card initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.2 }}>
       <SectionTitle
@@ -26,7 +60,7 @@ export function ActivityFeed() {
         }
       />
       <ul className="space-y-1 p-3">
-        {activities.map((activity, i) => {
+        {displayActivities.map((activity, i) => {
           const Icon = activity.icon;
           return (
             <motion.li

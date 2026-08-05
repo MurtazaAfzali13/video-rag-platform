@@ -1,9 +1,20 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Card, SectionTitle } from "../shared";
 import { DonutChart } from "./DonutChart";
-import { useDashboard } from "@/context/DashboardContext";
+import { useDashboard, type DonutDatum } from "@/context/DashboardContext";
+import { workflowDistribution as defaultWorkflowDistribution } from "@/mock/dashboard";
+
+const CORE_NODE_IDS = ["retriever", "validator", "generator", "web-search"] as const;
+
+function recalculatePercentages(data: DonutDatum[]): DonutDatum[] {
+  const total = data.reduce((sum, d) => sum + d.value, 0);
+  return data.map((d) => ({
+    ...d,
+    percentage: total > 0 ? Number(((d.value / total) * 100).toFixed(1)) : 0,
+  }));
+}
 
 export function WorkflowDistributionCard({ userId }: { userId: string }) {
   const { state, fetchWorkflowDistribution } = useDashboard();
@@ -13,17 +24,29 @@ export function WorkflowDistributionCard({ userId }: { userId: string }) {
     if (userId) {
       fetchWorkflowDistribution(userId);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [userId]);
 
-  // محاسبه مجموع واقعی مقادیر
-  const total = workflowDistribution.reduce((sum, d) => sum + d.value, 0);
+  const displayDistribution = useMemo(() => {
+    const source =
+      workflowDistribution.length > 0 ? workflowDistribution : defaultWorkflowDistribution;
 
-  // محاسبه مجدد درصدها به صورت دقیق در فرانت‌اند
-  const correctedDistribution = workflowDistribution.map(d => ({
-    ...d,
-    // جلوگیری از تقسیم بر صفر و گرد کردن تا یک رقم اعشار
-    percentage: total > 0 ? Number(((d.value / total) * 100).toFixed(1)) : 0 
-  }));
+    const coreNodes = CORE_NODE_IDS.map((nodeId) => {
+      const fromApi = source.find((d) => d.id === nodeId);
+      const fromMock = defaultWorkflowDistribution.find((d) => d.id === nodeId);
+      return fromApi ?? fromMock!;
+    });
+
+    const otherNode = source.find((d) => d.id === "other");
+    const merged = otherNode ? [...coreNodes, otherNode] : coreNodes;
+
+    return recalculatePercentages(merged);
+  }, [workflowDistribution]);
+
+  const total = useMemo(
+    () => displayDistribution.reduce((sum, d) => sum + d.value, 0),
+    [displayDistribution]
+  );
 
   if (isLoading) {
     return (
@@ -33,7 +56,7 @@ export function WorkflowDistributionCard({ userId }: { userId: string }) {
     );
   }
 
-  if (error) {
+  if (error && workflowDistribution.length === 0) {
     return (
       <Card className="flex h-[320px] items-center justify-center p-5 text-center text-sm text-red-400">
         خطا در بارگذاری توزیع پردازش: {error}
@@ -45,8 +68,12 @@ export function WorkflowDistributionCard({ userId }: { userId: string }) {
     <Card initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, delay: 0.15 }}>
       <SectionTitle title="AI Workflow Distribution" subtitle="Node execution share (LangGraph)" />
       <div className="p-5">
-        {correctedDistribution.length > 0 ? (
-          <DonutChart data={correctedDistribution} centerLabel="Total Runs" centerValue={total.toLocaleString("en-US")} />
+        {displayDistribution.length > 0 ? (
+          <DonutChart
+            data={displayDistribution}
+            centerLabel="Total Runs"
+            centerValue={total.toLocaleString("en-US")}
+          />
         ) : (
           <div className="flex h-48 items-center justify-center text-xs text-white/40">
             هیچ تِرِیس یا جریانی برای این کاربر ثبت نشده است.

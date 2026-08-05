@@ -21,7 +21,7 @@ export default function DashboardPage() {
     >
       <div className="space-y-6">
         {/* Row 1: KPI metric cards */}
-        <MetricsGrid />
+        <MetricsGrid userId={currentUserId} />
 
         
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
@@ -32,7 +32,7 @@ export default function DashboardPage() {
             <WorkflowDistributionCard userId={currentUserId} />
           </div>
           <div className="xl:col-span-1">
-            <ActivityFeed />
+            <ActivityFeed userId={currentUserId} />
           </div>
         </div>
       </div>

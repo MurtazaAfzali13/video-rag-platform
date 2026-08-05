@@ -157,6 +157,11 @@ class TestWorkflowIntegration:
             "next_node": None,
             "documents": None,
             "response": None,
+            "retriever_time_ms": 0,
+            "validator_time_ms": 0,
+            "generator_time_ms": 0,
+            "web_search_time_ms": 0,
+            "other_time_ms": 0,
         }
         
         # Run the graph
