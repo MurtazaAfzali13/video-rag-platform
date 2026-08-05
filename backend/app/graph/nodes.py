@@ -163,7 +163,7 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
     """Execute a fallback web search when local database resources are insufficient."""
     logger.info("Entering Web Search Node (Tavily)...")
     query = state["query"]
-    
+    start_time = time.time()
     web_search_tool = TavilySearchResults(max_results=3)
     
     try:
@@ -200,8 +200,9 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
                 })
             else:
                 logger.warning(f"Unexpected item in Tavily results: {d}")
+    elapsed_ms = int((time.time() - start_time) * 1000)
 
-    return {"documents": web_results}
+    return {"documents": web_results, "web_search_time_ms": elapsed_ms}
 
 
 def generate_answer_node(state: AgentState) -> dict[str, Any]:

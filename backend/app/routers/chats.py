@@ -167,6 +167,8 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             "retriever_time_ms": 0,
             "validator_time_ms": 0,
             "generator_time_ms": 0,
+            "web_search_time_ms": 0,
+            "other_time_ms": 0,
         }
 
         # اجرای گراف
@@ -177,6 +179,8 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
         logger.info(f"Retriever Time: {result.get('retriever_time_ms')} ms")
         logger.info(f"Validator Time: {result.get('validator_time_ms')} ms")
         logger.info(f"Generator Time: {result.get('generator_time_ms')} ms")
+        logger.info(f"Web Search Time: {result.get('web_search_time_ms')} ms")
+        logger.info(f"Other Time: {result.get('other_time_ms')} ms")
         logger.info("====================================")
 
         # --- ذخیره اطلاعات گراف (Traces) در دیتابیس ---
@@ -193,6 +197,8 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             retriever_time_ms=int(result.get("retriever_time_ms") or 0),
             validator_time_ms=int(result.get("validator_time_ms") or 0),
             generator_time_ms=int(result.get("generator_time_ms") or 0),
+            web_search_time_ms=int(result.get("web_search_time_ms") or 0),
+            other_time_ms=int(result.get("other_time_ms") or 0),
             success=bool(result.get("response"))
         )
         # ---------------------------------------------

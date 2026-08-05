@@ -54,6 +54,9 @@ class AgentState(TypedDict):
     retriever_time_ms: int
     validator_time_ms: int
     generator_time_ms: int
+    
+    web_search_time_ms: int 
+    other_time_ms: int
 
 
 class RouteDecision(BaseModel):

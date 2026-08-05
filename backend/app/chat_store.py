@@ -337,3 +337,55 @@ def save_workflow_trace(
             
     except Exception as exc:
         logger.error(f"❌ خطا در اجرای تابع save_workflow_trace: {str(exc)}")
+        
+        
+
+def get_user_metrics(user_id: str) -> dict:
+    """Fetch general dashboard metrics (e.g., total web searches) for a user."""
+    headers = _headers(get_settings().supabase_service_role_key)
+    
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            chats_url = f"{_base_url()}/rest/v1/chats"
+            chats_res = client.get(
+                chats_url, 
+                headers=headers, 
+                params={"user_id": f"eq.{user_id}", "select": "id"}
+            )
+            
+            if chats_res.status_code >= 400:
+                logger.error("Failed to fetch user chats for metrics: %s", chats_res.text)
+                raise ChatStoreError(chats_res.text)
+            
+            chat_ids = [c["id"] for c in chats_res.json()]
+            
+            if not chat_ids:
+                return {"web_searches": 0}
+            
+            traces_url = f"{_base_url()}/rest/v1/traces"
+            ids_str = ",".join(chat_ids)  
+            
+            traces_res = client.get(
+                traces_url,
+                headers=headers,
+                params={
+                    "chat_id": f"in.({ids_str})",
+                    "web_search_time_ms": "gt.0", 
+                    "select": "id"  
+                }
+            )
+            
+            if traces_res.status_code >= 400:
+                logger.error("Failed to fetch traces for metrics: %s", traces_res.text)
+                raise ChatStoreError(traces_res.text)
+                
+          
+            web_searches_count = len(traces_res.json())
+            
+            return {
+                "web_searches": web_searches_count
+            }
+            
+    except Exception as exc:
+        logger.error("Error in get_user_metrics: %s", str(exc))
+        raise ChatStoreError(str(exc))
