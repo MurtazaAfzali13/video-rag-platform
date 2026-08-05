@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { ChevronRight } from "lucide-react";
 import { Card, SectionTitle } from "../shared";
@@ -18,15 +18,8 @@ const colorMap: Record<string, string> = {
   red: "bg-red-500/10 text-red-300 ring-red-500/20",
 };
 
-export function ActivityFeed({ userId }: { userId?: string }) {
-  const { state, fetchMetrics, fetchWorkflowDistribution } = useDashboard();
-
-  useEffect(() => {
-    if (!userId) return;
-    fetchMetrics(userId);
-    fetchWorkflowDistribution(userId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
+export function ActivityFeed() {
+  const { state } = useDashboard();
 
   const displayActivities = useMemo(() => {
     const webSearchCount = state.metricsData?.web_searches;

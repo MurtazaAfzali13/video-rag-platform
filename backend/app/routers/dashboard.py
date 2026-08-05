@@ -1,13 +1,14 @@
 import asyncio
-from typing import List
+from typing import List, Literal
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 
 from app.chat_store import (
-    get_user_workflow_distribution, 
-    get_user_metrics, 
-    ChatStoreError
+    get_user_workflow_distribution,
+    get_user_metrics,
+    get_user_questions_metrics,
+    ChatStoreError,
 )
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -22,6 +23,18 @@ class WorkflowDistributionSchema(BaseModel):
 
 class DashboardMetricsSchema(BaseModel):
     web_searches: int
+
+
+class QuestionsChartPointSchema(BaseModel):
+    label: str
+    value: int
+
+
+class QuestionsMetricsSchema(BaseModel):
+    total_today: int
+    percentage_change: float
+    trend: Literal["up", "down"]
+    chart_data: List[QuestionsChartPointSchema]
 
 
 @router.get("/workflow-distribution", response_model=List[WorkflowDistributionSchema])
@@ -60,5 +73,21 @@ async def metrics_endpoint(user_id: str = Query(..., min_length=1)):
         
     except ChatStoreError as exc:
         raise HTTPException(status_code=503, detail="خطا در برقراری ارتباط با دیتابیس برای دریافت متریک‌ها.") from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+@router.get("/questions-metrics", response_model=QuestionsMetricsSchema)
+async def questions_metrics_endpoint(user_id: str = Query(..., min_length=1)):
+    """دریافت آمار سوالات پرسیده‌شده (پیام‌های کاربر) برای KPI و چارت هفتگی"""
+    try:
+        metrics_data = await asyncio.to_thread(get_user_questions_metrics, user_id)
+        return metrics_data
+
+    except ChatStoreError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="خطا در برقراری ارتباط با دیتابیس برای دریافت متریک سوالات.",
+        ) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo } from "react";
+import { useMemo } from "react";
 import { Card, SectionTitle } from "../shared";
 import { DonutChart } from "./DonutChart";
 import { useDashboard, type DonutDatum } from "@/context/DashboardContext";
@@ -16,16 +16,9 @@ function recalculatePercentages(data: DonutDatum[]): DonutDatum[] {
   }));
 }
 
-export function WorkflowDistributionCard({ userId }: { userId: string }) {
-  const { state, fetchWorkflowDistribution } = useDashboard();
+export function WorkflowDistributionCard() {
+  const { state } = useDashboard();
   const { workflowDistribution, isLoading, error } = state;
-
-  useEffect(() => {
-    if (userId) {
-      fetchWorkflowDistribution(userId);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);
 
   const displayDistribution = useMemo(() => {
     const source =
