@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
 import time
@@ -389,3 +389,119 @@ def get_user_metrics(user_id: str) -> dict:
     except Exception as exc:
         logger.error("Error in get_user_metrics: %s", str(exc))
         raise ChatStoreError(str(exc))
+
+
+def _format_chart_label(day: date) -> str:
+    """Format a date as a chart label (e.g. 'Dec 21')."""
+    return f"{day.strftime('%b')} {day.day}"
+
+
+def _empty_questions_metrics(today: date) -> dict[str, Any]:
+    """Return zeroed questions metrics with a 7-day chart skeleton."""
+    chart_start = today - timedelta(days=6)
+    return {
+        "total_today": 0,
+        "percentage_change": 0.0,
+        "trend": "up",
+        "chart_data": [
+            {"label": _format_chart_label(chart_start + timedelta(days=i)), "value": 0}
+            for i in range(7)
+        ],
+    }
+
+
+def get_user_questions_metrics(user_id: str) -> dict[str, Any]:
+    """Fetch question counts (user-role messages) for dashboard KPI and chart."""
+    headers = _headers(get_settings().supabase_service_role_key)
+    now = datetime.now(timezone.utc)
+    today = now.date()
+    yesterday = today - timedelta(days=1)
+    chart_start = today - timedelta(days=6)
+
+    logger.info("Fetching questions metrics for user_id=%s", user_id)
+
+    try:
+        with httpx.Client(timeout=15.0) as client:
+            chats_res = client.get(
+                f"{_base_url()}/rest/v1/chats",
+                headers=headers,
+                params={"user_id": f"eq.{user_id}", "select": "id"},
+            )
+
+            if chats_res.status_code >= 400:
+                logger.error("Failed to fetch user chats for questions metrics: %s", chats_res.text)
+                raise ChatStoreError(chats_res.text)
+
+            chat_ids = [chat["id"] for chat in chats_res.json()]
+            if not chat_ids:
+                logger.info("No chats found for user %s; returning empty questions metrics", user_id)
+                return _empty_questions_metrics(today)
+
+            ids_str = ",".join(chat_ids)
+            range_start = datetime.combine(chart_start, datetime.min.time(), tzinfo=timezone.utc)
+
+            messages_res = client.get(
+                f"{_base_url()}/rest/v1/messages",
+                headers=headers,
+                params={
+                    "chat_id": f"in.({ids_str})",
+                    "role": "eq.user",
+                    "created_at": f"gte.{range_start.isoformat()}",
+                    "select": "created_at",
+                },
+            )
+
+            if messages_res.status_code >= 400:
+                logger.error("Failed to fetch user messages for questions metrics: %s", messages_res.text)
+                raise ChatStoreError(messages_res.text)
+
+            counts_by_date: dict[date, int] = {}
+            for message in messages_res.json():
+                created_at_raw = message.get("created_at")
+                if not created_at_raw:
+                    continue
+                created_at = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+                message_date = created_at.astimezone(timezone.utc).date()
+                counts_by_date[message_date] = counts_by_date.get(message_date, 0) + 1
+
+            today_count = counts_by_date.get(today, 0)
+            yesterday_count = counts_by_date.get(yesterday, 0)
+
+            if yesterday_count > 0:
+                percentage_change = round(
+                    ((today_count - yesterday_count) / yesterday_count) * 100,
+                    1,
+                )
+            else:
+                percentage_change = 100.0 if today_count > 0 else 0.0
+
+            trend = "up" if today_count >= yesterday_count else "down"
+            chart_data = [
+                {
+                    "label": _format_chart_label(chart_start + timedelta(days=i)),
+                    "value": counts_by_date.get(chart_start + timedelta(days=i), 0),
+                }
+                for i in range(7)
+            ]
+
+            logger.info(
+                "Questions metrics for user %s: today=%d, yesterday=%d, change=%.1f%%, trend=%s",
+                user_id,
+                today_count,
+                yesterday_count,
+                percentage_change,
+                trend,
+            )
+
+            return {
+                "total_today": today_count,
+                "percentage_change": percentage_change,
+                "trend": trend,
+                "chart_data": chart_data,
+            }
+
+    except ChatStoreError:
+        raise
+    except Exception as exc:
+        logger.error("Error in get_user_questions_metrics for user %s: %s", user_id, str(exc))
+        raise ChatStoreError(str(exc)) from exc
