@@ -16,6 +16,7 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 
 
+
 def _build_combined_documents(
     transcript_data: list[dict[str, Any]],
     video_id: str,
@@ -47,6 +48,31 @@ def _build_combined_documents(
             current_text = ""
 
     return combined_docs
+
+
+def format_segments_for_llm(
+    transcript_data: list[dict[str, Any]],
+    max_chars: int = 12000,
+) -> str:
+    """Build a compact '[MM:SS] text' blob from the raw transcript for chapter-extraction prompts.
+
+    Reuses `_build_combined_documents` so the timestamps line up with the same segment
+    boundaries used for ingestion, then truncates to keep the prompt within a safe size.
+    """
+    combined_docs = _build_combined_documents(transcript_data, video_id="_", user_id="_")
+
+    lines: list[str] = []
+    total_chars = 0
+    for doc in combined_docs:
+        start_time = doc.metadata.get("start_time", 0.0)
+        minutes, seconds = int(start_time // 60), int(start_time % 60)
+        line = f"[{minutes:02d}:{seconds:02d}] {doc.page_content.strip()}"
+        if total_chars + len(line) > max_chars:
+            break
+        lines.append(line)
+        total_chars += len(line)
+
+    return "\n\n".join(lines)
 
 
 def _get_embeddings() -> OpenAIEmbeddings:
