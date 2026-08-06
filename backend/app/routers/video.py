@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from youtube_transcript_api._errors import YouTubeTranscriptApiException
 
 from app.config import get_settings
-from app.ingestion import process_and_ingest_video,format_segments_for_llm
+from app.ingestion import process_and_ingest_video, format_segments_for_llm
 from app.youtube_client import (
     extract_video_id,
     fetch_transcript,
@@ -25,12 +25,12 @@ from app.graph.state import VideoChaptersSchema
 
 logger = logging.getLogger(__name__)
 
-# ساخت Router اختصاصی برای ویدیوها
+
 router = APIRouter(prefix="/api", tags=["Video"])
 
 
-# --- Pydantic Schemas ---
 
+# pydantic schema for validation
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
     user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
@@ -43,13 +43,12 @@ class ProcessVideoResponse(BaseModel):
     chat_id: str
     chunks_processed: int
     message: str
-    # فیلدهای اضافه‌شده برای تغذیه فرانت‌اند (VideoTimelinePanel)
     title: Optional[str] = None
     timeline_items: Optional[List[Dict[str, Any]]] = None
     transcript_lines: Optional[List[Dict[str, Any]]] = None
 
 
-# --- Endpoints ---
+# --- Endpoints route ---
 
 @router.post("/process-video", response_model=ProcessVideoResponse)
 async def process_video(request: VideoRequest) -> ProcessVideoResponse:
@@ -71,8 +70,7 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
         else:
             transcript = await asyncio.to_thread(fetch_transcript, video_id)
         
-        chunks_processed = await asyncio.to_thread(
-            process_and_ingest_video,
+        chunks_processed = await process_and_ingest_video(
             transcript,
             video_id,
             request.user_id,
@@ -105,11 +103,7 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
                     "text": line.get("text", "")
                 })
 
-        # --- تولید واقعی سرفصل‌ها (chapters) از روی ترنسکریپت با LLM ---
-        # هیچ دیتای mock ای اینجا نیست: اگر ترنسکریپت کوتاه/نامفهوم باشد یا LLM خطا بدهد،
-        # timeline_items خالی می‌ماند تا فرانت‌اند حالت خالی (Empty State) را نشان دهد.
-        # مهم: این chain فقط ترنسکریپت را می‌بیند، هرگز سوال کاربر را نمی‌بیند — پس عنوان
-        # هیچ‌وقت نمی‌تواند سوال کاربر باشد.
+        #  Tileline source generation
         timeline_items: List[Dict[str, Any]] = []
         try:
             segments_text = format_segments_for_llm(transcript)
@@ -143,6 +137,10 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
     except ChatStoreError as exc:
         logger.error(f"Chat store error for video {video_id}: {exc}")
         raise HTTPException(status_code=503, detail=f"خطا در ذخیره‌سازی چت: {str(exc)}") from exc
+    except RuntimeError as exc:
+        # از process_and_ingest_video: یک یا چند batch حتی بعد از retry هم شکست خورده‌اند.
+        logger.error(f"Ingestion batches failed for video {video_id}: {exc}")
+        raise HTTPException(status_code=502, detail=f"خطا در ذخیره‌سازی embedding ویدیو: {str(exc)}") from exc
     except Exception as exc:
         logger.exception("Failed to process video %s", video_id)
         raise HTTPException(status_code=500, detail=f"خطای سرور: {str(exc)}") from exc
@@ -154,6 +152,6 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
         chunks_processed=chunks_processed,
         message="ویدیو با موفقیت پردازش و به چت متصل شد.",
         title=f"YouTube Video — {video_id}",
-        timeline_items=timeline_items,  # سرفصل‌های واقعی تولیدشده از ترنسکریپت (یا [] در صورت شکست)
+        timeline_items=timeline_items,  
         transcript_lines=formatted_transcript
     )
