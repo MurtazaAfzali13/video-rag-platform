@@ -5,10 +5,15 @@ import { useParams, useSearchParams, useRouter } from "next/navigation"; // useR
 import { useChatUserId } from "@/hooks/useChatUserId";
 import { useVideo } from "@/context/VideoContext";
 import { fetchChatMeta, fetchChatMessages, sendChatMessage } from "@/lib/chat-api";
-import { parseTimestampsFromText } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
 import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
 import ChatInterface from "@/components/chat/ChatInterface";
+
+function formatSecondsToTimestamp(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
+}
 
 export default function ChatPage() {
   const params = useParams();
@@ -44,16 +49,43 @@ export default function ChatPage() {
           setActiveVideoId(meta.video_id);
         }
 
-        const timeline: Array<{ id: string; time: string; title: string }> = [];
+        const timeline: Array<{ id: string; time: string; title: string; description?: string }> = [];
         msgs.forEach((msg: Message) => {
-          if (msg.role === "assistant") {
-            const timestamps = parseTimestampsFromText(msg.content);
-            timestamps.forEach(({ time }, i) => {
-              const id = `${msg.id}-${i}`;
-              if (!timeline.find((t) => t.time === time)) {
-                timeline.push({ id, time, title: `From history` });
-              }
-            });
+          if (msg.role !== "assistant") return;
+
+          // پیام‌ها JSON ساختاریافته از بک‌اند هستند (qa_response یا video_summary).
+          // عنوان هر آیتم تایم‌لاین باید از خودِ محتوای ویدیو (title/point) بیاید،
+          // نه از سوالی که کاربر پرسیده.
+          try {
+            const parsed = JSON.parse(msg.content);
+
+            if (parsed?.type === "qa_response" && Array.isArray(parsed.sources)) {
+              parsed.sources.forEach((source: any, i: number) => {
+                if (source.source_type === "video" && source.start_time !== undefined && source.start_time !== null) {
+                  const time = formatSecondsToTimestamp(source.start_time);
+                  if (!timeline.find((t) => t.time === time)) {
+                    timeline.push({
+                      id: `${msg.id}-src-${i}`,
+                      time,
+                      title: source.title || "بخش نامشخص",
+                      description: source.description,
+                    });
+                  }
+                }
+              });
+            } else if (parsed?.type === "video_summary" && Array.isArray(parsed.key_takeaways)) {
+              parsed.key_takeaways.forEach((k: any, i: number) => {
+                if (k.timestamp && !timeline.find((t) => t.time === k.timestamp)) {
+                  timeline.push({
+                    id: `${msg.id}-kt-${i}`,
+                    time: k.timestamp,
+                    title: k.point?.slice(0, 60) ?? "نکته کلیدی",
+                  });
+                }
+              });
+            }
+          } catch {
+            // پیام قدیمی/متنی (Legacy) است، نه JSON — چیزی برای استخراج امن نداریم، رد می‌شویم.
           }
         });
         if (timeline.length) setTimelineItems(timeline);
@@ -141,18 +173,44 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        const timestamps = parseTimestampsFromText(data.response);
-        if (timestamps.length > 0) {
-          const newItems = timestamps
-            .filter((t) => !timelineItems.find((p) => p.time === t.time))
-            .map(({ time }, i) => ({
-              id: `${assistantMsg.id}-${i}`,
-              time,
-              title: content.slice(0, 50),
-            }));
-          if (newItems.length) {
-            setTimelineItems([...timelineItems, ...newItems]);
+        // مهم: اینجا دیگر از سوال کاربر (`content`) به عنوان عنوان تایم‌لاین استفاده نمی‌کنیم.
+        // عنوان و توضیح واقعی هر رفرنس از خودِ پاسخ ساختاریافته (sources / key_takeaways)
+        // که مدل بر اساس محتوای ویدیو تولید کرده می‌آید.
+        try {
+          const parsed = JSON.parse(data.response);
+          let newItems: typeof timelineItems = [];
+
+          if (parsed?.type === "qa_response" && Array.isArray(parsed.sources)) {
+            newItems = parsed.sources
+              .filter(
+                (s: any) =>
+                  s.source_type === "video" && s.start_time !== undefined && s.start_time !== null
+              )
+              .map((s: any, i: number) => ({
+                id: `${assistantMsg.id}-src-${i}`,
+                time: formatSecondsToTimestamp(s.start_time),
+                title: s.title || "بخش نامشخص",
+                description: s.description,
+              }));
+          } else if (parsed?.type === "video_summary" && Array.isArray(parsed.key_takeaways)) {
+            newItems = parsed.key_takeaways
+              .filter((k: any) => !!k.timestamp)
+              .map((k: any, i: number) => ({
+                id: `${assistantMsg.id}-kt-${i}`,
+                time: k.timestamp,
+                title: k.point?.slice(0, 60) ?? "نکته کلیدی",
+              }));
           }
+
+          const dedupedNewItems = newItems.filter(
+            (item) => !timelineItems.find((p) => p.time === item.time)
+          );
+
+          if (dedupedNewItems.length) {
+            setTimelineItems([...timelineItems, ...dedupedNewItems]);
+          }
+        } catch {
+          // پاسخ JSON ساختاریافته نبود (حالت Legacy متنی) — چیزی برای استخراج امن نداریم.
         }
       } catch (err) {
         console.error(err);
