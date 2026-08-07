@@ -1,28 +1,31 @@
 "use client";
 
 import { useEffect } from "react";
+import { useUser } from "@clerk/nextjs"; // 🛡️ اضافه کردن هوک Clerk برای دریافت اطلاعات کاربر
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
 import { MetricsGrid } from "@/components/dashboard/cards/MetricsGrid";
 import { SalesOverviewChart, WorkflowDistributionCard } from "@/components/dashboard/charts";
 import { ActivityFeed } from "@/components/dashboard/activity";
 import { useDashboard } from "@/context/DashboardContext";
 
-const CURRENT_USER_ID = "user_3FOfWMpgxPu5eB5bUWAn5E4bsqV";
-
 export function DashboardOverview() {
   const { fetchMetrics, fetchQuestionsMetrics, fetchWorkflowDistribution } = useDashboard();
+  const { user } = useUser(); // 🛡️ دریافت اطلاعات کاربر فعلی
 
   useEffect(() => {
-    fetchMetrics(CURRENT_USER_ID);
-    fetchQuestionsMetrics(CURRENT_USER_ID);
-    fetchWorkflowDistribution(CURRENT_USER_ID);
+    fetchMetrics();
+    fetchQuestionsMetrics();
+    fetchWorkflowDistribution();
   }, [fetchMetrics, fetchQuestionsMetrics, fetchWorkflowDistribution]);
+
+  // استخراج نام کاربر (اگر نامی ثبت نکرده بود، کلمه پیش‌فرض نمایش داده می‌شود)
+  const firstName = user?.firstName || "there";
 
   return (
     <DashboardShell
       breadcrumb="Dashboard / Overview"
       title="Dashboard"
-      subtitle="Welcome back, Armin! Here's what's happening with your AI platform today."
+      subtitle={`Welcome back, ${firstName}! Here's what's happening with your AI platform today.`}
     >
       <div className="space-y-6">
         <MetricsGrid />

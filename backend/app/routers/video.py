@@ -20,6 +20,7 @@ from app.chat_store import (
     get_chat,
     init_chat,
     update_chat_video_id,
+    update_chat_timeline,
     get_user_video_count,
 )
 from app.graph.chains import create_chapters_chain
@@ -66,9 +67,7 @@ async def process_video(
     user_id = auth.user_id
     settings = get_settings()
 
-    # --- 🚦 RBAC / Quota: کاربر Admin نامحدود است، کاربر Free حداکثر ۱ ویدیو ---
-    # این چک عمداً همینجا، قبل از fetch ترنسکریپت/ingestion قرار گرفته تا اگر کاربر به سقف
-    # رسیده، هیچ هزینه‌ای (فراخوانی یوتیوب، embedding، Pinecone) صرف نشود.
+   
     if not auth.is_admin:
         video_count = await asyncio.to_thread(get_user_video_count, user_id)
         if video_count >= 1:
@@ -101,16 +100,13 @@ async def process_video(
             process_and_ingest_video,
             transcript,
             video_id,
-            # 🛡️ پوشش امنیتی: به جای request.user_id، از متغیر امن user_id استفاده می‌کنیم
             user_id, 
         )
         
         target_chat_id = request.chat_id
-        # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id استخراج شده از توکن
         existing_chat = await asyncio.to_thread(get_chat, target_chat_id, user_id)
         
         if not existing_chat:
-            # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id
             await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
 
         # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id
@@ -135,11 +131,7 @@ async def process_video(
                     "text": line.get("text", "")
                 })
 
-        # --- تولید واقعی سرفصل‌ها (chapters) از روی ترنسکریپت با LLM ---
-        # هیچ دیتای mock ای اینجا نیست: اگر ترنسکریپت کوتاه/نامفهوم باشد یا LLM خطا بدهد،
-        # timeline_items خالی می‌ماند تا فرانت‌اند حالت خالی (Empty State) را نشان دهد.
-        # مهم: این chain فقط ترنسکریپت را می‌بیند، هرگز سوال کاربر را نمی‌بیند — پس عنوان
-        # هیچ‌وقت نمی‌تواند سوال کاربر باشد.
+      
         timeline_items: List[Dict[str, Any]] = []
         try:
             segments_text = format_segments_for_llm(transcript)
@@ -158,6 +150,18 @@ async def process_video(
         except Exception as exc:
             logger.warning("Chapter extraction failed for video %s: %s", video_id, exc)
             timeline_items = []
+
+  
+        try:
+            await asyncio.to_thread(
+                update_chat_timeline,
+                target_chat_id,
+                user_id,
+                timeline_items=timeline_items,
+                transcript_lines=formatted_transcript,
+            )
+        except Exception as exc:
+            logger.warning("Failed to persist timeline for chat %s: %s", target_chat_id, exc)
 
     except YouTubeTranscriptApiException as exc:
         logger.error(f"Failed to fetch transcript for video {video_id}: {exc}")
