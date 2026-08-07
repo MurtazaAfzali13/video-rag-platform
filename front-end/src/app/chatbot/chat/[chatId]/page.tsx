@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useSearchParams, useRouter } from "next/navigation"; // useRouter اضافه شد
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useChatUserId } from "@/hooks/useChatUserId";
 import { useVideo } from "@/context/VideoContext";
 import { fetchChatMeta, fetchChatMessages, sendChatMessage } from "@/lib/chat-api";
@@ -10,13 +10,17 @@ import type { Message, Chat } from "@/types";
 import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
 import ChatInterface from "@/components/chat/ChatInterface";
 
+import { useAuth } from "@clerk/nextjs";
+
 export default function ChatPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const router = useRouter(); // اضافه شد
+  const router = useRouter();
   const chatId = params.chatId as string;
   const initialVideoUrl = searchParams.get("videoUrl");
   const userId = useChatUserId();
+  
+  const { getToken } = useAuth();
   
   const { setActiveVideoId, setTimelineItems, timelineItems } = useVideo();
 
@@ -29,46 +33,53 @@ export default function ChatPage() {
   const messageIdCounter = useRef(0);
   const processingTriggered = useRef(false);
 
-  const loadChatData = useCallback(() => {
-    if (!chatId || !userId) return;
+  const loadChatData = useCallback(async () => {
+    if (!chatId) return;
     setIsLoadingChat(true);
 
-    Promise.all([
-      fetchChatMeta(chatId, userId),
-      fetchChatMessages(chatId, userId),
-    ])
-      .then(([meta, msgs]) => {
-        setChat(meta);
-        setMessages(msgs);
-        if (meta.video_id) {
-          setActiveVideoId(meta.video_id);
-        }
+    try {
+      const token = await getToken();
+      
+      if (!token) {
+        throw new Error("احراز هویت نامعتبر است (توکن یافت نشد).");
+      }
+      
+      const [meta, msgs] = await Promise.all([
+        fetchChatMeta(chatId, token),
+        fetchChatMessages(chatId, token),
+      ]);
+      
+      setChat(meta);
+      setMessages(msgs);
+      if (meta.video_id) {
+        setActiveVideoId(meta.video_id);
+      }
 
-        const timeline: Array<{ id: string; time: string; title: string }> = [];
-        msgs.forEach((msg: Message) => {
-          if (msg.role === "assistant") {
-            const timestamps = parseTimestampsFromText(msg.content);
-            timestamps.forEach(({ time }, i) => {
-              const id = `${msg.id}-${i}`;
-              if (!timeline.find((t) => t.time === time)) {
-                timeline.push({ id, time, title: `From history` });
-              }
-            });
-          }
-        });
-        if (timeline.length) setTimelineItems(timeline);
-      })
-      .catch((err) => {
-        console.error("Error loading chat context:", err);
-      })
-      .finally(() => setIsLoadingChat(false));
-  }, [chatId, userId, setActiveVideoId, setTimelineItems]);
+      const timeline: Array<{ id: string; time: string; title: string }> = [];
+      msgs.forEach((msg: Message) => {
+        if (msg.role === "assistant") {
+          const timestamps = parseTimestampsFromText(msg.content);
+          timestamps.forEach(({ time }, i) => {
+            const id = `${msg.id}-${i}`;
+            if (!timeline.find((t) => t.time === time)) {
+              timeline.push({ id, time, title: `From history` });
+            }
+          });
+        }
+      });
+      if (timeline.length) setTimelineItems(timeline);
+    } catch (err) {
+      console.error("Error loading chat context:", err);
+    } finally {
+      setIsLoadingChat(false);
+    }
+  }, [chatId, setActiveVideoId, setTimelineItems, getToken]);
 
   useEffect(() => {
     if (!initialVideoUrl) {
       loadChatData();
     }
-  }, [chatId, userId, initialVideoUrl, loadChatData]);
+  }, [chatId, initialVideoUrl, loadChatData]);
 
   useEffect(() => {
     if (initialVideoUrl && userId && chatId && !processingTriggered.current) {
@@ -83,17 +94,15 @@ export default function ChatPage() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               video_url: initialVideoUrl,
-              user_id: userId,
               chat_id: chatId,
             }),
           });
+          
           const data = await res.json();
           
           if (!res.ok) {
             console.error("Process video error:", data);
-            // ✅ اصلاح اصلی: نمایش پیام خطای ارسالی از سرور
             alert(data.error || "خطا در پردازش ویدیو. لطفاً دوباره تلاش کنید.");
-            // کاربر را به صفحه اصلی برمی‌گردانیم تا در صفحه خالی نماند
             router.push("/chatbot");
             return;
           }
@@ -103,7 +112,7 @@ export default function ChatPage() {
         } catch (error) {
           console.error("Failed to process video:", error);
           alert("خطای ارتباط با سرور. لطفاً دوباره تلاش کنید.");
-          router.push("/chatbot"); // برگشت به صفحه اصلی در صورت خطای شبکه
+          router.push("/chatbot");
         } finally {
           setIsVideoProcessing(false);
           setIsLoadingChat(false);
@@ -116,7 +125,6 @@ export default function ChatPage() {
 
   const handleSendMessage = useCallback(
     async (content: string) => {
-      // بقیه کدهای این بخش بدون تغییر است...
       if (!userId || !content.trim()) return;
 
       const userMsg: Message = {
@@ -130,7 +138,15 @@ export default function ChatPage() {
       setIsTyping(true);
 
       try {
-        const data = await sendChatMessage(content, userId, chatId, chat?.video_id ?? null);
+        const token = await getToken();
+        
+        if (!token) {
+          console.error("Token is null. User might be logged out.");
+          alert("خطا در احراز هویت. لطفاً دوباره وارد حساب کاربری خود شوید.");
+          return;
+        }
+
+        const data = await sendChatMessage(content, token, chatId, chat?.video_id ?? null);
 
         const assistantMsg: Message = {
           id: `local-ai-${++messageIdCounter.current}`,
@@ -156,11 +172,12 @@ export default function ChatPage() {
         }
       } catch (err) {
         console.error(err);
+        alert("خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
       } finally {
         setIsTyping(false);
       }
     },
-    [userId, chatId, chat?.video_id, setTimelineItems, timelineItems]
+    [userId, chatId, chat?.video_id, setTimelineItems, timelineItems, getToken]
   );
 
   const handleClearChat = useCallback(() => {

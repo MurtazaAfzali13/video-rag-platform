@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback, useMemo } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useUser, useClerk } from "@clerk/nextjs";
+import { useUser, useClerk, useAuth } from "@clerk/nextjs";
 import {
   Plus,
   MessageSquare,
@@ -14,8 +14,8 @@ import {
   Crown,
   Sparkles,
   Loader2,
+  AlertCircle,
 } from "lucide-react";
-import { useChatUserId } from "@/hooks/useChatUserId";
 import { fetchChats } from "@/lib/chat-api";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import type { Chat } from "@/types";
@@ -50,36 +50,64 @@ function groupChatsByDate(chats: Chat[]) {
 export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
+  
   const { user } = useUser();
   const { signOut } = useClerk();
-  const userId = useChatUserId();
+  const { getToken, isLoaded, isSignedIn } = useAuth();
 
   const [chats, setChats] = useState<Chat[]>([]);
   const [search, setSearch] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isCreating, setIsCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadChats = useCallback(async () => {
-    if (!userId) return;
+    if (!isLoaded || !isSignedIn) return;
+    
+    // وقتی تایمر کار می‌کند، نمی‌خواهیم هر 5 ثانیه علامت لودینگ نشان دهیم
+    // پس فقط اگر آرایه چت‌ها خالی بود، isLoading را true می‌کنیم
+    if (chats.length === 0) {
+      setIsLoading(true);
+    }
+    
+    setError(null);
     try {
-      const data = await fetchChats(userId);
-      // فیلتر کردن چت‌های خالی (New Chat)
+      const token = await getToken();
+      if (!token) {
+        throw new Error("نشست شما نامعتبر است. لطفاً دوباره وارد شوید.");
+      }
+
+      const data = await fetchChats(token); 
+      
       const validChats = data.filter(
-        (chat) => chat.title?.trim().toLowerCase() !== "new chat"
+        (chat: Chat) => chat.title?.trim().toLowerCase() !== "new chat"
       );
       setChats(validChats);
-    } catch (e) {
-      console.error(e);
+    } catch (e: any) {
+      console.error("Failed to load chat history:", e);
+      setError(e.message || "خطا در بارگذاری تاریخچه چت‌ها.");
     } finally {
       setIsLoading(false);
     }
-  }, [userId]);
+  }, [getToken, isLoaded, isSignedIn, chats.length]);
 
+  // ------------------------------------------------------------------
+  // 🛡️ بخش اصلاح شده: بازگرداندن آپدیت خودکار (تایمر ۵ ثانیه‌ای)
+  // ------------------------------------------------------------------
   useEffect(() => {
-    loadChats();
-    const interval = setInterval(loadChats, 5000);
-    return () => clearInterval(interval);
-  }, [loadChats]);
+    if (isLoaded && isSignedIn) {
+      loadChats(); // بارگذاری اولیه
+      
+      // هر ۵ ثانیه چک می‌کند تا اگر عنوانی تغییر کرد یا چت جدیدی ساخته شد، سایدبار آپدیت شود
+      const interval = setInterval(() => {
+        loadChats();
+      }, 5000);
+      
+      // پاک کردن تایمر در صورت خروج از کامپوننت
+      return () => clearInterval(interval);
+    }
+  }, [loadChats, isLoaded, isSignedIn, pathname]);
+  // ------------------------------------------------------------------
 
   const filtered = chats.filter((c) =>
     c.title.toLowerCase().includes(search.toLowerCase())
@@ -92,6 +120,7 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
     setIsCreating(true);
     try {
       onNavigate?.();
+      const newChatId = crypto.randomUUID();
       router.push("/chatbot");
     } finally {
       setIsCreating(false);
@@ -180,6 +209,17 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
               />
             ))}
           </div>
+        ) : error ? (
+          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
+            <AlertCircle className="size-6 text-red-400/80 mb-3" />
+            <p className="text-xs text-red-400 font-medium">{error}</p>
+            <button
+              onClick={loadChats}
+              className="mt-4 px-3 py-1.5 rounded bg-white/5 text-[10px] text-purple-400 border border-purple-500/20 hover:bg-white/10 transition-colors"
+            >
+              تلاش دوباره
+            </button>
+          </div>
         ) : groupedChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <div className="relative mb-3">
@@ -202,10 +242,7 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
                 </p>
                 <ul className="space-y-0.5">
                   {groupChats.map((chat) => {
-                    
-                    // --- بخش اصلاح شده: چون بک‌اند مستقیماً متن کاربر را ذخیره می‌کند، نیازی به پارس کردن نیست ---
                     const displayTitle = chat.title || "New Chat";
-                    
                     const isActive = pathname === `/chatbot/chat/${chat.id}`;
                     return (
                       <li key={chat.id}>

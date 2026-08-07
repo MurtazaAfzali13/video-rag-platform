@@ -28,6 +28,13 @@ async def lifespan(app: FastAPI):
         settings.validate_for_ingestion()
     except ValueError as exc:
         logger.warning("Startup validation: %s", exc)
+    try:
+        settings.validate_for_auth()
+    except ValueError as exc:
+        # عمداً هنوز جلوی بالا آمدن سرور را نمی‌گیریم (fail-soft در استارتاپ)، ولی این پیام
+        # را به‌وضوح در لاگ می‌گذاریم تا مشکل همینجا دیده شود، نه بعداً به‌شکل یک
+        # AttributeError مبهم روی اولین درخواست احراز هویت‌شده.
+        logger.warning("Startup validation: %s", exc)
     yield
 
 
