@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useCallback, useEffect } from "react";
+import React, { createContext, useContext, useState, useCallback } from "react";
 
 export interface TimelineItem {
   id: string;
@@ -31,10 +31,23 @@ interface VideoContextType {
   activeTimestampId: string | null;
   setActiveTimestampId: (id: string | null) => void;
   clearTimeline: () => void;
+  /**
+   * دیتای واقعی و ذخیره‌شده‌ی یک چت (که از بک‌اند/Supabase می‌آید) را داخل کانتکست
+   * می‌ریزد. این باید همیشه بر روی هر بازسازی محلی/fallback اولویت داشته باشد.
+   */
+  hydrateFromChat: (
+    chat:
+      | {
+          video_id?: string | null;
+          timeline_items?: TimelineItem[] | null;
+          transcript_lines?: TranscriptLine[] | null;
+        }
+      | null
+      | undefined
+  ) => void;
 }
 
 const VideoContext = createContext<VideoContextType | null>(null);
-// STORAGE_KEY حذف شد تا دیتای کش شده لود نشود
 
 export function VideoProvider({ children }: { children: React.ReactNode }) {
   const [activeVideoId, setActiveVideoId] = useState<string | null>(null);
@@ -53,8 +66,31 @@ export function VideoProvider({ children }: { children: React.ReactNode }) {
     setActiveTimestampId(null);
   }, []);
 
-  // UseEffect های مربوط به localStorage حذف شدند تا در ابتدای ورود هیچ دیتای ثابتی لود نشود.
-  
+  const hydrateFromChat = useCallback(
+    (
+      chat:
+        | {
+            video_id?: string | null;
+            timeline_items?: TimelineItem[] | null;
+            transcript_lines?: TranscriptLine[] | null;
+          }
+        | null
+        | undefined
+    ) => {
+      if (!chat) return;
+
+      if (chat.video_id) {
+        setActiveVideoId(chat.video_id);
+      }
+
+      // همیشه با آرایه‌ی واقعی برگشته از سرور جایگزین می‌کنیم (حتی اگر خالی باشد)
+      // تا دیتای سرور، هر fallback محلی قبلی را override کند.
+      setTimelineItems(Array.isArray(chat.timeline_items) ? chat.timeline_items : []);
+      setTranscriptLines(Array.isArray(chat.transcript_lines) ? chat.transcript_lines : []);
+    },
+    []
+  );
+
   return (
     <VideoContext.Provider
       value={{
@@ -69,6 +105,7 @@ export function VideoProvider({ children }: { children: React.ReactNode }) {
         activeTimestampId,
         setActiveTimestampId,
         clearTimeline,
+        hydrateFromChat,
       }}
     >
       {children}

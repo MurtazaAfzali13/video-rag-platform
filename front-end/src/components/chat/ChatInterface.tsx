@@ -16,7 +16,6 @@ import {
   ImageIcon,
   CheckCheck,
   Globe,
-  PlayCircle,
   ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -62,6 +61,15 @@ function extractTimestamps(text: string): string[] {
 
 function removeTimestampsFromText(text: string): string {
   return text.replace(/\[?\b\d{1,2}:\d{2}(?::\d{2})?\b\]?/g, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function safeHostname(url: string | undefined): string {
+  if (!url) return "Web source";
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return "Web source";
+  }
 }
 
 function formatMessageTime(iso: string): string {
@@ -228,50 +236,53 @@ const AssistantContent = memo(function AssistantContent({
 
         {parsedContent.sources && parsedContent.sources.length > 0 && (
           <div className="mt-2 pt-3 border-t border-slate-700/50">
+            {/*
+              🎯 طراحی عمداً اینجا با VideoTimelinePanel فرق دارد:
+              - داخل ChatInterface (این‌جا): فقط کارت‌های کوچک/pill با زمان (+لینک خارجی
+                برای منابع وب)، بدون عنوان/توضیح — چون این‌جا فقط چت است و باید کم‌حجم
+                و سریع‌اسکن باشد.
+              - داخل VideoTimelinePanel: لیست کامل با آیکون play، زمان، عنوان و توضیح
+                (سرفصل‌های واقعی ویدیو) — که همان‌جا از قبل پیاده‌سازی شده و دست‌نخورده
+                باقی می‌ماند.
+            */}
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
               <ArrowUpRight className="size-3" />
-              Sources
+              Related timestamps
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {parsedContent.sources.map((source: any, idx: number) => (
-                <div 
-                  key={idx}
-                  className={`flex flex-col gap-1.5 rounded-lg p-2.5 border transition-all duration-200 ${
-                    source.source_type === 'video' 
-                      ? 'border-purple-500/20 bg-purple-500/5 hover:bg-purple-500/10 hover:border-purple-500/40 cursor-pointer group' 
-                      : 'border-slate-700/50 bg-slate-800/30'
-                  }`}
-                  onClick={() => {
-                    if (source.source_type === 'video' && source.start_time !== undefined) {
-                       onJumpToTime(source.start_time);
-                    }
-                  }}
-                >
-                  <div className="flex items-start gap-2">
-                    {source.source_type === 'video' ? (
-                      <PlayCircle className="size-4 text-purple-400 shrink-0 mt-0.5 transition-transform group-hover:scale-110" />
-                    ) : (
-                      <Globe className="size-4 text-blue-400 shrink-0 mt-0.5" />
-                    )}
-                    <div className="min-w-0 flex-1">
-                      {source.source_type === 'video' ? (
-                        <span className="mt-1 inline-block bg-purple-900/50 text-purple-300 text-[10px] font-mono px-1.5 py-0.5 rounded">
-                          {formatTimestamp(source.start_time || 0)}
-                        </span>
-                      ) : (
-                        <a 
-                          href={source.url} 
-                          target="_blank" 
-                          rel="noreferrer"
-                          className="mt-1 flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 hover:underline"
-                        >
-                          View Web Source <ExternalLink className="size-2.5" />
-                        </a>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+            <div className="flex flex-wrap items-center gap-2">
+              {parsedContent.sources.map((source: any, idx: number) => {
+                const key = `${source.source_type}-${source.start_time ?? source.url ?? idx}-${idx}`;
+
+                if (source.source_type === "video") {
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => onJumpToTime(source.start_time || 0)}
+                      className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-gradient-to-r from-violet-600/20 to-purple-700/20 px-3 py-1.5 text-xs font-medium text-purple-300 shadow-sm shadow-purple-500/10 transition-all duration-200 hover:scale-105 hover:border-purple-400/70 hover:from-violet-600/40 hover:to-purple-700/40 hover:text-purple-100 active:scale-95 group"
+                      title={source.title || undefined}
+                    >
+                      <span className="shrink-0 font-mono">{formatTimestamp(source.start_time || 0)}</span>
+                      <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    </button>
+                  );
+                }
+
+                return (
+                  <a
+                    key={key}
+                    href={source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/40 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-300 shadow-sm transition-all duration-200 hover:scale-105 hover:border-blue-400/50 hover:bg-slate-800/70 hover:text-blue-300 active:scale-95 group"
+                    title={source.title || safeHostname(source.url)}
+                  >
+                    <Globe className="size-3 shrink-0" />
+                    <span className="max-w-[110px] truncate">{safeHostname(source.url)}</span>
+                    <ExternalLink className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                  </a>
+                );
+              })}
             </div>
           </div>
         )}
@@ -353,7 +364,19 @@ export default function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   // استفاده از کانتکست ویدیو که قبلا پیاده‌سازی کردید
-  const { jumpToTime } = useVideo();
+  const { jumpToTime, hydrateFromChat } = useVideo();
+
+  // 💾 بازیابی تایم‌لاین/ترنسکریپت ذخیره‌شده‌ی این چت (از Supabase) داخل VideoContext.
+  // این افکت دقیقاً یک‌بار به‌ازای هر chat.id اجرا می‌شود — نه با هر رندر — چون بعد از
+  // این‌که یک ویدیوی جدید همین حالا پردازش شد (VideoTimelinePanel از قبل state را ست
+  // کرده)، نباید یک fetch/رندر بعدی با همان chat.id دوباره آن را بازنویسی/پاک کند.
+  const hydratedChatIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!chat?.id) return;
+    if (hydratedChatIdRef.current === chat.id) return;
+    hydratedChatIdRef.current = chat.id;
+    hydrateFromChat(chat as any);
+  }, [chat, hydrateFromChat]);
 
   // Scroll to bottom
   useEffect(() => {

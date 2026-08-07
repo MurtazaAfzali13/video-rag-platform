@@ -7,8 +7,6 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Optional
 
-import time
-
 import httpx
 
 from app.config import get_settings
@@ -71,12 +69,7 @@ def _ensure_video_exists(video_id: str, user_id: str) -> None:
 
 
 def _exact_count(table: str, params: dict[str, str]) -> int:
-    """Get an exact row count for a filtered Supabase table WITHOUT fetching the rows.
-
-    Uses PostgREST's `Prefer: count=exact` + a HEAD request, so the response body is empty
-    and we only pay for the count itself (no row data transferred). The count comes back in
-    the `Content-Range` response header, formatted like `"0-0/42"` (or `"*/0"` for zero rows).
-    """
+    """Get an exact row count for a filtered Supabase table WITHOUT fetching the rows."""
     headers = _headers(get_settings().supabase_service_role_key)
     headers["Prefer"] = "count=exact"
 
@@ -97,21 +90,7 @@ def _exact_count(table: str, params: dict[str, str]) -> int:
 
 
 def get_user_video_count(user_id: str) -> int:
-    """Count how many distinct videos this user has processed, for the free-tier video quota.
-
-    IMPORTANT DESIGN NOTE: this intentionally counts via `chats.video_id` scoped to this
-    `user_id`, rather than counting rows in the shared `videos` table filtered by `user_id`.
-
-    Why: `_ensure_video_exists` only ever creates a `videos` row for the FIRST user who ever
-    processes a given YouTube video — it's a shared FK-safety cache keyed by the YouTube
-    video ID, not a per-user ownership ledger. If a second user later processes that same
-    already-cached video, no new `videos` row is created for them (the existence check only
-    looks at the video id, not at who owns it), so counting from `videos.user_id` would
-    UNDER-COUNT that second user's quota usage — a free-tier user could process unlimited
-    *popular/already-processed* videos and never hit the quota. Counting via the user's own
-    `chats` rows avoids this entirely, since each user's chat-to-video links are private to
-    them regardless of who processed the video first.
-    """
+    """Count how many distinct videos this user has processed."""
     return _exact_count(
         "chats",
         {"user_id": f"eq.{user_id}", "video_id": "not.is.null"},
@@ -119,17 +98,7 @@ def get_user_video_count(user_id: str) -> int:
 
 
 def get_user_message_count(user_id: str) -> int:
-    """Count how many user-authored chat messages (questions) this user has ever sent.
-
-    Only `role = "user"` messages count against the quota — the assistant's replies are not
-    counted, since the limit is meant to cap how many questions/AI invocations a free-tier
-    user can make, not how many total rows exist in the conversation.
-
-    `messages` doesn't carry `user_id` directly (only `chat_id`), so this first resolves the
-    user's own chat ids, then counts messages restricted to those chats. Because `chat_id` is
-    only ever taken from the user's own resolved chat list, this can never count another
-    user's messages.
-    """
+    """Count how many user-authored chat messages (questions) this user has ever sent."""
     chat_ids = [chat["id"] for chat in list_chats(user_id, limit=1000)]
     if not chat_ids:
         return 0
@@ -308,7 +277,6 @@ def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Cha
 
 def update_chat_video_id(chat_id: str, user_id: str, video_id: str) -> dict[str, Any]:
     """Update the video_id associated with a chat."""
-    # ارسال user_id به تابع برای ساخت ویدیو موقت
     _ensure_video_exists(video_id, user_id)
 
     with httpx.Client(timeout=30.0) as client:
@@ -328,6 +296,42 @@ def update_chat_video_id(chat_id: str, user_id: str, video_id: str) -> dict[str,
 
     rows = response.json()
     return rows[0] if isinstance(rows, list) and rows else {"id": chat_id, "video_id": video_id}
+
+
+def update_chat_timeline(
+    chat_id: str,
+    user_id: str,
+    *,
+    timeline_items: Optional[list[dict[str, Any]]] = None,
+    transcript_lines: Optional[list[dict[str, Any]]] = None,
+) -> dict[str, Any]:
+    """Persist the LLM-generated timeline/transcript for a chat."""
+    payload: dict[str, Any] = {}
+    if timeline_items is not None:
+        payload["timeline_items"] = timeline_items
+    if transcript_lines is not None:
+        payload["transcript_lines"] = transcript_lines
+
+    if not payload:
+        return {"id": chat_id}
+
+    with httpx.Client(timeout=30.0) as client:
+        response = client.patch(
+            f"{_base_url()}/rest/v1/chats",
+            headers=_headers(get_settings().supabase_service_role_key),
+            params={
+                "id": f"eq.{chat_id}",
+                "user_id": f"eq.{user_id}",
+            },
+            json=payload,
+        )
+
+    if response.status_code >= 400:
+        logger.error("Failed to persist chat timeline for chat %s: %s", chat_id, response.text)
+        return {"id": chat_id, **payload}
+
+    rows = response.json()
+    return rows[0] if isinstance(rows, list) and rows else {"id": chat_id, **payload}
 
 
 def update_chat_title(chat_id: str, user_id: str, title: str) -> dict[str, Any]:
@@ -351,22 +355,19 @@ def update_chat_title(chat_id: str, user_id: str, title: str) -> dict[str, Any]:
     return rows[0] if isinstance(rows, list) and rows else {"id": chat_id, "title": title}
 
 
-
-def get_user_workflow_distribution(user_id: str) -> list[dict[str, Any]]:
+def get_user_workflow_distribution(user_id: str, is_admin: bool = False) -> list[dict[str, Any]]:
     """Fetch aggregated LangGraph node execution stats via Supabase RPC."""
     url = f"{_base_url()}/rest/v1/rpc/get_workflow_distribution"
     headers = _headers(get_settings().supabase_service_role_key)
-    
+    payload_user_id = None if is_admin else user_id
     with httpx.Client(timeout=15.0) as client:
-        response = client.post(url, headers=headers, json={"p_user_id": user_id})
+        response = client.post(url, headers=headers, json={"p_user_id": payload_user_id})
         
     if response.status_code >= 400:
         logger.error("Failed to fetch dashboard workflow metrics: %s", response.text)
         raise ChatStoreError(response.text)
         
     return response.json()
-
-
 
 
 def save_workflow_trace(
@@ -390,8 +391,8 @@ def save_workflow_trace(
         "retriever_time_ms": retriever_time_ms,
         "generator_time_ms": generator_time_ms,
         "validator_time_ms": validator_time_ms,
-        "web_search_time_ms": web_search_time_ms, # <--- اضافه شد
-        "other_time_ms": other_time_ms,           # <--- اضافه شد
+        "web_search_time_ms": web_search_time_ms,
+        "other_time_ms": other_time_ms,
         "success": success,
         "created_at": _now_iso()
     }
@@ -408,49 +409,59 @@ def save_workflow_trace(
             
     except Exception as exc:
         logger.error(f"❌ خطا در اجرای تابع save_workflow_trace: {str(exc)}")
-        
-        
 
-def get_user_metrics(user_id: str) -> dict:
-    """Fetch general dashboard metrics (e.g., total web searches) for a user."""
+
+def get_user_metrics(user_id: str, is_admin: bool = False) -> dict:
+    """Fetch general dashboard metrics (e.g., total web searches) for a user or admin."""
     headers = _headers(get_settings().supabase_service_role_key)
     
     try:
         with httpx.Client(timeout=15.0) as client:
-            chats_url = f"{_base_url()}/rest/v1/chats"
-            chats_res = client.get(
-                chats_url, 
-                headers=headers, 
-                params={"user_id": f"eq.{user_id}", "select": "id"}
-            )
-            
-            if chats_res.status_code >= 400:
-                logger.error("Failed to fetch user chats for metrics: %s", chats_res.text)
-                raise ChatStoreError(chats_res.text)
-            
-            chat_ids = [c["id"] for c in chats_res.json()]
-            
-            if not chat_ids:
-                return {"web_searches": 0}
-            
             traces_url = f"{_base_url()}/rest/v1/traces"
-            ids_str = ",".join(chat_ids)  
             
-            traces_res = client.get(
-                traces_url,
-                headers=headers,
-                params={
-                    "chat_id": f"in.({ids_str})",
-                    "web_search_time_ms": "gt.0", 
-                    "select": "id"  
-                }
-            )
+            if is_admin:
+                # 🛡️ مسیر ادمین: دریافت کل جستجوهای وب در سیستم (بدون فیلتر روی چت خاص)
+                traces_res = client.get(
+                    traces_url,
+                    headers=headers,
+                    params={
+                        "web_search_time_ms": "gt.0", 
+                        "select": "id"  
+                    }
+                )
+            else:
+                # 👤 مسیر کاربر معمولی: ابتدا یافتن چت‌های کاربر، سپس فیلتر کردن
+                chats_url = f"{_base_url()}/rest/v1/chats"
+                chats_res = client.get(
+                    chats_url, 
+                    headers=headers, 
+                    params={"user_id": f"eq.{user_id}", "select": "id"}
+                )
+                
+                if chats_res.status_code >= 400:
+                    logger.error("Failed to fetch user chats for metrics: %s", chats_res.text)
+                    raise ChatStoreError(chats_res.text)
+                
+                chat_ids = [c["id"] for c in chats_res.json()]
+                
+                if not chat_ids:
+                    return {"web_searches": 0}
+                
+                ids_str = ",".join(chat_ids)  
+                traces_res = client.get(
+                    traces_url,
+                    headers=headers,
+                    params={
+                        "chat_id": f"in.({ids_str})",
+                        "web_search_time_ms": "gt.0", 
+                        "select": "id"  
+                    }
+                )
             
             if traces_res.status_code >= 400:
                 logger.error("Failed to fetch traces for metrics: %s", traces_res.text)
                 raise ChatStoreError(traces_res.text)
                 
-          
             web_searches_count = len(traces_res.json())
             
             return {
@@ -481,7 +492,7 @@ def _empty_questions_metrics(today: date) -> dict[str, Any]:
     }
 
 
-def get_user_questions_metrics(user_id: str) -> dict[str, Any]:
+def get_user_questions_metrics(user_id: str, is_admin: bool = False) -> dict[str, Any]:
     """Fetch question counts (user-role messages) for dashboard KPI and chart."""
     headers = _headers(get_settings().supabase_service_role_key)
     now = datetime.now(timezone.utc)
@@ -489,43 +500,58 @@ def get_user_questions_metrics(user_id: str) -> dict[str, Any]:
     yesterday = today - timedelta(days=1)
     chart_start = today - timedelta(days=6)
 
-    logger.info("Fetching questions metrics for user_id=%s", user_id)
+    logger.info("Fetching questions metrics for user_id=%s, is_admin=%s", user_id, is_admin)
 
     try:
         with httpx.Client(timeout=15.0) as client:
-            chats_res = client.get(
-                f"{_base_url()}/rest/v1/chats",
-                headers=headers,
-                params={"user_id": f"eq.{user_id}", "select": "id"},
-            )
-
-            if chats_res.status_code >= 400:
-                logger.error("Failed to fetch user chats for questions metrics: %s", chats_res.text)
-                raise ChatStoreError(chats_res.text)
-
-            chat_ids = [chat["id"] for chat in chats_res.json()]
-            if not chat_ids:
-                logger.info("No chats found for user %s; returning empty questions metrics", user_id)
-                return _empty_questions_metrics(today)
-
-            ids_str = ",".join(chat_ids)
             range_start = datetime.combine(chart_start, datetime.min.time(), tzinfo=timezone.utc)
+            messages_url = f"{_base_url()}/rest/v1/messages"
 
-            messages_res = client.get(
-                f"{_base_url()}/rest/v1/messages",
-                headers=headers,
-                params={
-                    "chat_id": f"in.({ids_str})",
-                    "role": "eq.user",
-                    "created_at": f"gte.{range_start.isoformat()}",
-                    "select": "created_at",
-                },
-            )
+            if is_admin:
+                # 🛡️ مسیر ادمین: دریافت تمام پیام‌های سیستم که مربوط به کاربران است (در ۷ روز گذشته)
+                messages_res = client.get(
+                    messages_url,
+                    headers=headers,
+                    params={
+                        "role": "eq.user",
+                        "created_at": f"gte.{range_start.isoformat()}",
+                        "select": "created_at",
+                    },
+                )
+            else:
+                # 👤 مسیر کاربر معمولی: ابتدا چت‌هایش را پیدا می‌کنیم، بعد سوالات را استخراج می‌کنیم
+                chats_res = client.get(
+                    f"{_base_url()}/rest/v1/chats",
+                    headers=headers,
+                    params={"user_id": f"eq.{user_id}", "select": "id"},
+                )
+
+                if chats_res.status_code >= 400:
+                    logger.error("Failed to fetch user chats for questions metrics: %s", chats_res.text)
+                    raise ChatStoreError(chats_res.text)
+
+                chat_ids = [chat["id"] for chat in chats_res.json()]
+                if not chat_ids:
+                    logger.info("No chats found for user %s; returning empty questions metrics", user_id)
+                    return _empty_questions_metrics(today)
+
+                ids_str = ",".join(chat_ids)
+                messages_res = client.get(
+                    messages_url,
+                    headers=headers,
+                    params={
+                        "chat_id": f"in.({ids_str})",
+                        "role": "eq.user",
+                        "created_at": f"gte.{range_start.isoformat()}",
+                        "select": "created_at",
+                    },
+                )
 
             if messages_res.status_code >= 400:
                 logger.error("Failed to fetch user messages for questions metrics: %s", messages_res.text)
                 raise ChatStoreError(messages_res.text)
 
+            # --- پردازش دیتا برای نمودار و آمار دقیقاً مانند قبل است ---
             counts_by_date: dict[date, int] = {}
             for message in messages_res.json():
                 created_at_raw = message.get("created_at")

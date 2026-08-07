@@ -7,6 +7,7 @@ import React, {
   useReducer,
   ReactNode,
 } from "react";
+import { useAuth } from "@clerk/nextjs"; // 🛡️ اضافه شدن هوک کِلِرک برای دریافت توکن
 
 // ---------------- Types ----------------
 
@@ -101,26 +102,30 @@ const dashboardReducer = (state: DashboardState, action: DashboardAction): Dashb
 
 // ---------------- Context ----------------
 
+// 💡 رفع خطا: ورودی userId از تعریف توابع حذف شد
 const DashboardContext = createContext<{
   state: DashboardState;
-  fetchWorkflowDistribution: (userId: string) => Promise<void>;
-  fetchMetrics: (userId: string) => Promise<void>;
-  fetchQuestionsMetrics: (userId: string) => Promise<void>;
+  fetchWorkflowDistribution: () => Promise<void>;
+  fetchMetrics: () => Promise<void>;
+  fetchQuestionsMetrics: () => Promise<void>;
 } | undefined>(undefined);
 
 // ---------------- Provider ----------------
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(dashboardReducer, initialState);
+  const { getToken } = useAuth(); // 🛡️ گرفتن تابع تولید توکن
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  const fetchWorkflowDistribution = useCallback(async (userId: string) => {
+  // 💡 رفع خطا: ورودی userId از توابع زیر هم حذف شد
+  const fetchWorkflowDistribution = useCallback(async () => {
     dispatch({ type: "FETCH_START" });
     try {
-      const res = await fetch(
-        `${baseUrl}/api/dashboard/workflow-distribution?user_id=${userId}`
-      );
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/dashboard/workflow-distribution`, {
+        headers: { "Authorization": `Bearer ${token}` } // 🛡️ ارسال توکن
+      });
       if (!res.ok) throw new Error("مشکلی در دریافت اطلاعات چارت رخ داد.");
 
       const data = await res.json();
@@ -129,12 +134,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       const message = err instanceof Error ? err.message : "خطای ناشناخته";
       dispatch({ type: "FETCH_FAILURE", payload: message });
     }
-  }, [baseUrl]);
+  }, [baseUrl, getToken]);
 
-  const fetchMetrics = useCallback(async (userId: string) => {
+  const fetchMetrics = useCallback(async () => {
     dispatch({ type: "FETCH_METRICS_START" });
     try {
-      const res = await fetch(`${baseUrl}/api/dashboard/metrics?user_id=${userId}`);
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/dashboard/metrics`, {
+        headers: { "Authorization": `Bearer ${token}` } // 🛡️ ارسال توکن
+      });
       if (!res.ok) throw new Error("مشکلی در دریافت متریک‌های داشبورد رخ داد.");
 
       const data = await res.json();
@@ -144,14 +152,15 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         err instanceof Error ? err.message : "خطای ناشناخته در دریافت متریک‌ها";
       dispatch({ type: "FETCH_METRICS_FAILURE", payload: message });
     }
-  }, [baseUrl]);
+  }, [baseUrl, getToken]);
 
-  const fetchQuestionsMetrics = useCallback(async (userId: string) => {
+  const fetchQuestionsMetrics = useCallback(async () => {
     dispatch({ type: "FETCH_QUESTIONS_START" });
     try {
-      const res = await fetch(
-        `${baseUrl}/api/dashboard/questions-metrics?user_id=${userId}`
-      );
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/dashboard/questions-metrics`, {
+        headers: { "Authorization": `Bearer ${token}` } // 🛡️ ارسال توکن
+      });
       if (!res.ok) throw new Error("مشکلی در دریافت متریک سوالات رخ داد.");
 
       const data = await res.json();
@@ -161,7 +170,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         err instanceof Error ? err.message : "خطای ناشناخته در دریافت متریک سوالات";
       dispatch({ type: "FETCH_QUESTIONS_FAILURE", payload: message });
     }
-  }, [baseUrl]);
+  }, [baseUrl, getToken]);
 
   return (
     <DashboardContext.Provider

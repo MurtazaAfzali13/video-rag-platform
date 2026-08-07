@@ -9,7 +9,7 @@ import { cn } from "@/lib/dashboard-cn";
 import type { DashboardMetric } from "@/types/dashboard";
 
 const colorMap = {
-  blue: { text: "text-blue-400", bg: "bg-blue-500/10", stroke: "#3b82f6", ring: "ring-blue-500/20" },
+  blue: { text: "text-blue-400", bg: "bg-blue-500/10", stroke: "#1c64ad", ring: "ring-blue-500/20" },
   purple: { text: "text-purple-400", bg: "bg-purple-500/10", stroke: "#a855f7", ring: "ring-purple-500/20" },
   cyan: { text: "text-cyan-400", bg: "bg-cyan-500/10", stroke: "#22d3ee", ring: "ring-cyan-500/20" },
   pink: { text: "text-pink-400", bg: "bg-pink-500/10", stroke: "#ec4899", ring: "ring-pink-500/20" },

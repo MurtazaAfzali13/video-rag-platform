@@ -1,8 +1,7 @@
 import asyncio
 from typing import List, Literal
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-
 
 from app.chat_store import (
     get_user_workflow_distribution,
@@ -10,6 +9,8 @@ from app.chat_store import (
     get_user_questions_metrics,
     ChatStoreError,
 )
+# 🛡️ وارد کردن توابع احراز هویت
+from app.auth import get_current_user_with_role, AuthenticatedUser
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
@@ -24,11 +25,9 @@ class WorkflowDistributionSchema(BaseModel):
 class DashboardMetricsSchema(BaseModel):
     web_searches: int
 
-
 class QuestionsChartPointSchema(BaseModel):
     label: str
     value: int
-
 
 class QuestionsMetricsSchema(BaseModel):
     total_today: int
@@ -38,11 +37,17 @@ class QuestionsMetricsSchema(BaseModel):
 
 
 @router.get("/workflow-distribution", response_model=List[WorkflowDistributionSchema])
-async def workflow_distribution_endpoint(user_id: str = Query(..., min_length=1)):
+async def workflow_distribution_endpoint(
+    auth: AuthenticatedUser = Depends(get_current_user_with_role) # 🛡️ استفاده از Token
+):
     """دریافت دیتای مربوط به چارت دونات برای نمایش توزیع گره‌های لنگ‌گراف"""
     try:
-        raw_data = await asyncio.to_thread(get_user_workflow_distribution, user_id)
-        
+        # ارسال آیدی و نقش کاربر به تابع دیتابیس
+        raw_data = await asyncio.to_thread(
+            get_user_workflow_distribution, 
+            auth.user_id, 
+            auth.is_admin
+        )
         
         formatted_data = []
         for item in raw_data:
@@ -63,11 +68,13 @@ async def workflow_distribution_endpoint(user_id: str = Query(..., min_length=1)
 
 
 @router.get("/metrics", response_model=DashboardMetricsSchema)
-async def metrics_endpoint(user_id: str = Query(..., min_length=1)):
+async def metrics_endpoint(
+    auth: AuthenticatedUser = Depends(get_current_user_with_role) # 🛡️ استفاده از Token
+):
     """دریافت آمارهای عددی بالای داشبورد مانند تعداد کل جستجوهای وب"""
     try:
-        # اجرا در Thread جداگانه برای جلوگیری از بلاک شدن Event Loop
-        metrics_data = await asyncio.to_thread(get_user_metrics, user_id)
+        # 💡 اصلاح شد: ارسال auth.user_id و auth.is_admin
+        metrics_data = await asyncio.to_thread(get_user_metrics, auth.user_id, auth.is_admin)
         
         return metrics_data
         
@@ -78,10 +85,13 @@ async def metrics_endpoint(user_id: str = Query(..., min_length=1)):
 
 
 @router.get("/questions-metrics", response_model=QuestionsMetricsSchema)
-async def questions_metrics_endpoint(user_id: str = Query(..., min_length=1)):
+async def questions_metrics_endpoint(
+    auth: AuthenticatedUser = Depends(get_current_user_with_role) # 💡 اصلاح شد: جایگزینی Query با Depends
+):
     """دریافت آمار سوالات پرسیده‌شده (پیام‌های کاربر) برای KPI و چارت هفتگی"""
     try:
-        metrics_data = await asyncio.to_thread(get_user_questions_metrics, user_id)
+        # 💡 اصلاح شد: ارسال auth.user_id و auth.is_admin
+        metrics_data = await asyncio.to_thread(get_user_questions_metrics, auth.user_id, auth.is_admin)
         return metrics_data
 
     except ChatStoreError as exc:

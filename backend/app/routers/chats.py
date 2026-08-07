@@ -57,6 +57,21 @@ class ChatSummary(BaseModel):
     created_at: str
 
 
+class ChatDetail(ChatSummary):
+    """رکورد کامل یک چت، شامل تایم‌لاین/ترنسکریپت ذخیره‌شده‌ی ویدیو.
+
+    عمداً این را از ChatSummary جدا نگه داشتیم: GET /chats (لیست چت‌ها، احتمالاً
+    ده‌ها آیتم) نباید مجبور باشد دیتای سنگین timeline_items/transcript_lines هر
+    چت را حمل کند. این دیتا فقط وقتی یک چت خاص باز می‌شود (GET /chats/{chat_id})
+    لازم است — همان‌جایی که قبلاً به‌خاطر response_model=ChatSummary، این دو
+    فیلد بی‌صدا از JSON پاسخ حذف می‌شدند (حتی با اینکه در دیتابیس و در دیکشنری
+    خام get_chat() موجود بودند) و فرانت مجبور می‌شد fallback بزند.
+    """
+
+    timeline_items: list[dict] = Field(default_factory=list)
+    transcript_lines: list[dict] = Field(default_factory=list)
+
+
 class MessageRecord(BaseModel):
     id: str
     chat_id: str
@@ -79,26 +94,26 @@ async def get_user_chats(
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.get("/chats/{chat_id}", response_model=ChatSummary)
+@router.get("/chats/{chat_id}", response_model=ChatDetail)
 async def get_chat_metadata(
     chat_id: str,
     user_id: str = Depends(get_current_user),
-) -> ChatSummary:
+) -> ChatDetail:
     try:
         chat = await asyncio.to_thread(get_chat, chat_id, user_id)
         if not chat:
             raise HTTPException(status_code=404, detail="Chat not found.")
-        return ChatSummary(**chat)
+        return ChatDetail(**chat)
     except ChatStoreError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@router.patch("/chats/{chat_id}", response_model=ChatSummary)
+@router.patch("/chats/{chat_id}", response_model=ChatDetail)
 async def update_chat_metadata(
     chat_id: str,
     request: UpdateChatRequest,
     user_id: str = Depends(get_current_user),
-) -> ChatSummary:
+) -> ChatDetail:
     try:
         existing = await asyncio.to_thread(get_chat, chat_id, user_id)
         if not existing:
@@ -115,7 +130,7 @@ async def update_chat_metadata(
         updated = await asyncio.to_thread(get_chat, chat_id, user_id)
         if not updated:
             raise HTTPException(status_code=404, detail="Chat not found.")
-        return ChatSummary(**updated)
+        return ChatDetail(**updated)
     except ChatStoreError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 

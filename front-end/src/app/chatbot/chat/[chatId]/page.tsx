@@ -24,7 +24,7 @@ export default function ChatPage() {
   // 🛡️ دریافت تابع استخراج توکن کلرک
   const { getToken } = useAuth();
   
-  const { setActiveVideoId, setTimelineItems, timelineItems } = useVideo();
+  const { setActiveVideoId, setTimelineItems, hydrateFromChat } = useVideo();
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -55,29 +55,40 @@ export default function ChatPage() {
       
       setChat(meta);
       setMessages(msgs);
-      if (meta.video_id) {
-        setActiveVideoId(meta.video_id);
-      }
 
-      const timeline: Array<{ id: string; time: string; title: string }> = [];
-      msgs.forEach((msg: Message) => {
-        if (msg.role === "assistant") {
-          const timestamps = parseTimestampsFromText(msg.content);
-          timestamps.forEach(({ time }, i) => {
-            const id = `${msg.id}-${i}`;
-            if (!timeline.find((t) => t.time === time)) {
-              timeline.push({ id, time, title: `From history` });
-            }
-          });
-        }
-      });
-      if (timeline.length) setTimelineItems(timeline);
+      // 🔧 فیکس: اول همیشه دیتای واقعی و ذخیره‌شده‌ی چت (سرفصل‌های واقعی LLM +
+      // ترنسکریپت) را از بک‌اند هیدریت می‌کنیم. این هم video_id و هم
+      // timeline_items/transcript_lines واقعی را ست می‌کند و باید همیشه اولویت
+      // داشته باشد.
+      hydrateFromChat(meta);
+
+      // Fallback: فقط برای چت‌های قدیمی/legacy که هنوز هیچ timeline_items واقعی
+      // در دیتابیس ندارند (مثلاً قبل از این migration پردازش شده‌اند)، از روی
+      // تایم‌استمپ‌های خام داخل متن پیام‌های تاریخی یک تایم‌لاین موقت می‌سازیم.
+      // قبلاً این بخش بدون قید و شرط اجرا می‌شد و همیشه دیتای واقعی هیدریت‌شده
+      // را با آیتم‌های "From history" (بدون description) overwrite می‌کرد.
+      const hasRealTimeline = Array.isArray(meta.timeline_items) && meta.timeline_items.length > 0;
+      if (!hasRealTimeline) {
+        const timeline: Array<{ id: string; time: string; title: string }> = [];
+        msgs.forEach((msg: Message) => {
+          if (msg.role === "assistant") {
+            const timestamps = parseTimestampsFromText(msg.content);
+            timestamps.forEach(({ time }, i) => {
+              const id = `${msg.id}-${i}`;
+              if (!timeline.find((t) => t.time === time)) {
+                timeline.push({ id, time, title: `From history` });
+              }
+            });
+          }
+        });
+        if (timeline.length) setTimelineItems(timeline);
+      }
     } catch (err) {
       console.error("Error loading chat context:", err);
     } finally {
       setIsLoadingChat(false);
     }
-  }, [chatId, setActiveVideoId, setTimelineItems, getToken]);
+  }, [chatId, setActiveVideoId, setTimelineItems, hydrateFromChat, getToken]);
 
   useEffect(() => {
     if (!initialVideoUrl) {
@@ -167,19 +178,15 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        const timestamps = parseTimestampsFromText(data.response);
-        if (timestamps.length > 0) {
-          const newItems = timestamps
-            .filter((t) => !timelineItems.find((p) => p.time === t.time))
-            .map(({ time }, i) => ({
-              id: `${assistantMsg.id}-${i}`,
-              time,
-              title: content.slice(0, 50),
-            }));
-          if (newItems.length) {
-            setTimelineItems([...timelineItems, ...newItems]);
-          }
-        }
+        // 🔧 فیکس: قبلاً اینجا از روی تایم‌استمپ‌های خام متن پاسخ، آیتم تازه‌ای به
+        // timelineItems (که VideoTimelinePanel/Timeline tab را پر می‌کند) اضافه
+        // می‌شد با title: content.slice(0, 50) — یعنی عنوان همان سوال خود کاربر
+        // بود، نه موضوع واقعی آن بخش از ویدیو. سرفصل‌های واقعی همین حالا از
+        // hydrateFromChat/process-video در timelineItems نشسته‌اند و نباید با
+        // ورودی دستیِ نادرست از هر پیام جدید آلوده شوند. منابع مرتبط با همین
+        // پاسخ (اگر پاسخ ساختاریافته qa_response باشد) از قبل داخل خود
+        // ChatInterface به‌صورت pillهای "Related timestamps" نمایش داده می‌شوند
+        // — نیازی به تزریق دستی در تایم‌لاین اصلی نیست.
       } catch (err) {
         console.error(err);
         alert("خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
@@ -187,7 +194,7 @@ export default function ChatPage() {
         setIsTyping(false);
       }
     },
-    [userId, chatId, chat?.video_id, setTimelineItems, timelineItems, getToken]
+    [userId, chatId, chat?.video_id, getToken]
   );
 
   const handleClearChat = useCallback(() => {
