@@ -10,7 +10,8 @@ from app.graph.state import (
     RouteDecision, 
     GradeDocuments, 
     FinalAnswerSchema, # جایگزین GroundedAnswer شد
-    VideoSummarySchema
+    VideoSummarySchema,
+    VideoChaptersSchema,
 )
 
 logger = logging.getLogger(__name__)
@@ -87,6 +88,39 @@ def create_generator_chain() -> Any:
     settings = get_settings()
     # استفاده از FinalAnswerSchema برای یکپارچگی با State
     return prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
+
+
+def create_chapters_chain() -> Any:
+    """Create chain that turns a raw, timestamped transcript into a YouTube-style chapter list.
+
+    This is what feeds `timeline_items` in VideoTimelinePanel. It must NEVER see the user's
+    chat query — it only ever looks at the transcript — so chapter titles can never end up
+    being the user's question.
+    """
+    system_prompt = (
+        "You are an expert video content editor creating a YouTube-style chapter list.\n"
+        "You will be given timestamped transcript segments (format: [MM:SS] text) for a single video.\n\n"
+        "Task: identify 4 to 12 distinct topical chapters that best organize the video's content.\n\n"
+        "STRICT RULES:\n"
+        "1. Every chapter's 'time' MUST be copied EXACTLY from one of the provided [MM:SS] markers. "
+        "Never invent, round, or estimate a timestamp.\n"
+        "2. 'title' must be a short descriptive topic heading about the CONTENT being discussed "
+        "(e.g. 'Setting up the Environment', 'Agents in LangChain'). It is a topic label, never a "
+        "question, and it has nothing to do with any user chat message.\n"
+        "3. 'description' is exactly one concise sentence summarizing that specific chapter.\n"
+        "4. Order chapters chronologically by timestamp.\n"
+        "5. If the transcript is too short, too generic, or otherwise insufficient to derive "
+        "meaningful chapters, return an empty 'chapters' list. Do not fabricate content.\n\n"
+        "Transcript segments:\n{context}"
+    )
+
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", system_prompt),
+        ("human", "Generate the chapter list now, based only on the transcript segments above."),
+    ])
+
+    settings = get_settings()
+    return prompt | get_llm(settings.generator_model).with_structured_output(VideoChaptersSchema)
 
 
 def create_summary_chain() -> Any:

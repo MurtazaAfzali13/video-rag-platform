@@ -59,6 +59,40 @@ class AgentState(TypedDict):
     other_time_ms: int
 
 
+class ChapterItem(BaseModel):
+    time: str = Field(
+        ...,
+        description=(
+            "Timestamp in MM:SS format where this chapter begins. "
+            "MUST be copied EXACTLY from one of the [MM:SS] markers given in the transcript "
+            "segments — never invent or estimate a timestamp."
+        ),
+    )
+    title: str = Field(
+        ...,
+        description=(
+            "A short, punchy topic heading (3-7 words) describing what is being discussed "
+            "in the VIDEO at this timestamp, e.g. 'Setting up the Environment'. "
+            "This is a topic label, NEVER a question and NEVER related to any user chat message."
+        ),
+    )
+    description: str = Field(
+        ...,
+        description="One concise sentence summarizing what this specific chapter/segment covers.",
+    )
+
+
+class VideoChaptersSchema(BaseModel):
+    chapters: List[ChapterItem] = Field(
+        default=[],
+        description=(
+            "Chronological list of 4-12 distinct topical chapters that organize the whole video. "
+            "Return an empty list if the transcript is too short, too generic, or otherwise "
+            "insufficient to derive meaningful chapters."
+        ),
+    )
+
+
 class RouteDecision(BaseModel):
     reasoning: str = Field(
         ..., 

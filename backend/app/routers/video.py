@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 from youtube_transcript_api._errors import YouTubeTranscriptApiException
 
 from app.config import get_settings
-from app.ingestion import process_and_ingest_video
+from app.ingestion import process_and_ingest_video,format_segments_for_llm
 from app.youtube_client import (
     extract_video_id,
     fetch_transcript,
@@ -22,6 +22,8 @@ from app.chat_store import (
     update_chat_video_id,
     get_user_video_count,
 )
+from app.graph.chains import create_chapters_chain
+from app.graph.state import VideoChaptersSchema
 
 # 🛡️ Auth + RBAC: dependency that returns both the verified user_id and their role
 from app.auth import get_current_user_with_role, AuthenticatedUser
@@ -133,8 +135,30 @@ async def process_video(
                     "text": line.get("text", "")
                 })
 
-        # دیتای پیش‌فرض (mock) حذف شد تا در صورت نبود سرفصل، سیستم حالت خالی (Empty State) را نمایش دهد.
-        
+        # --- تولید واقعی سرفصل‌ها (chapters) از روی ترنسکریپت با LLM ---
+        # هیچ دیتای mock ای اینجا نیست: اگر ترنسکریپت کوتاه/نامفهوم باشد یا LLM خطا بدهد،
+        # timeline_items خالی می‌ماند تا فرانت‌اند حالت خالی (Empty State) را نشان دهد.
+        # مهم: این chain فقط ترنسکریپت را می‌بیند، هرگز سوال کاربر را نمی‌بیند — پس عنوان
+        # هیچ‌وقت نمی‌تواند سوال کاربر باشد.
+        timeline_items: List[Dict[str, Any]] = []
+        try:
+            segments_text = format_segments_for_llm(transcript)
+            if segments_text.strip():
+                chapters_chain = create_chapters_chain()
+                chapters_result: VideoChaptersSchema = await asyncio.to_thread(
+                    chapters_chain.invoke, {"context": segments_text}
+                )
+                for i, chapter in enumerate(chapters_result.chapters):
+                    timeline_items.append({
+                        "id": f"{video_id}-chapter-{i}",
+                        "time": chapter.time,
+                        "title": chapter.title,
+                        "description": chapter.description,
+                    })
+        except Exception as exc:
+            logger.warning("Chapter extraction failed for video %s: %s", video_id, exc)
+            timeline_items = []
+
     except YouTubeTranscriptApiException as exc:
         logger.error(f"Failed to fetch transcript for video {video_id}: {exc}")
         if is_transcript_blocked(exc):
@@ -160,6 +184,6 @@ async def process_video(
         chunks_processed=chunks_processed,
         message="ویدیو با موفقیت پردازش و به چت متصل شد.",
         title=f"YouTube Video — {video_id}",
-        timeline_items=[],  # لیست خالی ارسال می‌شود تا اگر سرفصلی نبود، هیچ چیز پیش‌فرضی نشان ندهد
+        timeline_items=timeline_items,  # سرفصل‌های واقعی تولیدشده از ترنسکریپت (یا [] در صورت شکست)
         transcript_lines=formatted_transcript
     )

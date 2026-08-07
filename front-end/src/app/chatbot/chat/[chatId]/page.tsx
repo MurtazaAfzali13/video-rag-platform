@@ -10,6 +10,7 @@ import type { Message, Chat } from "@/types";
 import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
 import ChatInterface from "@/components/chat/ChatInterface";
 
+// 🛡️ پوشش امنیتی: وارد کردن هوک کلرک
 import { useAuth } from "@clerk/nextjs";
 
 export default function ChatPage() {
@@ -20,6 +21,7 @@ export default function ChatPage() {
   const initialVideoUrl = searchParams.get("videoUrl");
   const userId = useChatUserId();
   
+  // 🛡️ دریافت تابع استخراج توکن کلرک
   const { getToken } = useAuth();
   
   const { setActiveVideoId, setTimelineItems, timelineItems } = useVideo();
@@ -38,8 +40,10 @@ export default function ChatPage() {
     setIsLoadingChat(true);
 
     try {
+      // 🛡️ دریافت توکن برای ارسال به توابع chat-api
       const token = await getToken();
       
+      // 🛡️ رفع خطای تایپ‌اسکریپت (Type Narrowing)
       if (!token) {
         throw new Error("احراز هویت نامعتبر است (توکن یافت نشد).");
       }
@@ -82,6 +86,7 @@ export default function ChatPage() {
   }, [chatId, initialVideoUrl, loadChatData]);
 
   useEffect(() => {
+    // 🛡️ متغیر userId فقط برای اطمینان از لاگین بودن چک می‌شود
     if (initialVideoUrl && userId && chatId && !processingTriggered.current) {
       processingTriggered.current = true;
       
@@ -89,12 +94,15 @@ export default function ChatPage() {
         setIsVideoProcessing(true);
         setIsLoadingChat(true);
         try {
+          // در اینجا نیازی به اضافه کردن دستی توکن به هدر نیست، چون درخواست
+          // به API داخلی Next.js می‌رود و خود Next.js و Clerk متوجه هویت کاربر می‌شوند
           const res = await fetch("/api/process-video", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               video_url: initialVideoUrl,
               chat_id: chatId,
+              // 🛡️ فیلد user_id از اینجا برای همیشه پاک شد!
             }),
           });
           
@@ -138,8 +146,10 @@ export default function ChatPage() {
       setIsTyping(true);
 
       try {
+        // 🛡️ توکن دریافت و به API ارسال می‌شود
         const token = await getToken();
         
+        // 🛡️ رفع خطای تایپ‌اسکریپت
         if (!token) {
           console.error("Token is null. User might be logged out.");
           alert("خطا در احراز هویت. لطفاً دوباره وارد حساب کاربری خود شوید.");
