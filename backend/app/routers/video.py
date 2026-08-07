@@ -1,7 +1,8 @@
 import asyncio
 import logging
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException
+# 🛡️ پوشش امنیتی: Depends اضافه شد تا تابع اعتبارسنجی را به عنوان پیش‌نیاز تعریف کنیم
+from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from youtube_transcript_api._errors import YouTubeTranscriptApiException
 
@@ -19,9 +20,13 @@ from app.chat_store import (
     get_chat,
     init_chat,
     update_chat_video_id,
+    get_user_video_count,
 )
 from app.graph.chains import create_chapters_chain
 from app.graph.state import VideoChaptersSchema
+
+# 🛡️ Auth + RBAC: dependency that returns both the verified user_id and their role
+from app.auth import get_current_user_with_role, AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +38,7 @@ router = APIRouter(prefix="/api", tags=["Video"])
 
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
-    user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
+    # 🛡️ پوشش امنیتی: فیلد user_id به طور کامل از اینجا حذف شد تا کلاینت نتواند آن را جعل کند
     chat_id: str = Field(..., min_length=1, description="Mandatory client-generated UUID for the session")
 
 
@@ -43,7 +48,6 @@ class ProcessVideoResponse(BaseModel):
     chat_id: str
     chunks_processed: int
     message: str
-    # فیلدهای اضافه‌شده برای تغذیه فرانت‌اند (VideoTimelinePanel)
     title: Optional[str] = None
     timeline_items: Optional[List[Dict[str, Any]]] = None
     transcript_lines: Optional[List[Dict[str, Any]]] = None
@@ -52,8 +56,30 @@ class ProcessVideoResponse(BaseModel):
 # --- Endpoints ---
 
 @router.post("/process-video", response_model=ProcessVideoResponse)
-async def process_video(request: VideoRequest) -> ProcessVideoResponse:
+async def process_video(
+    request: VideoRequest,
+    # 🛡️ این خط باعث می‌شود FastAPI قبل از اجرای بدنه تابع، توکن را چک کند و هم user_id و
+    # هم role را مستقیماً از JWT تایید‌شده استخراج کند — هیچ‌کدام هرگز از بدنه/URL درخواست
+    # گرفته نمی‌شوند.
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
+) -> ProcessVideoResponse:
+    user_id = auth.user_id
     settings = get_settings()
+
+    # --- 🚦 RBAC / Quota: کاربر Admin نامحدود است، کاربر Free حداکثر ۱ ویدیو ---
+    # این چک عمداً همینجا، قبل از fetch ترنسکریپت/ingestion قرار گرفته تا اگر کاربر به سقف
+    # رسیده، هیچ هزینه‌ای (فراخوانی یوتیوب، embedding، Pinecone) صرف نشود.
+    if not auth.is_admin:
+        video_count = await asyncio.to_thread(get_user_video_count, user_id)
+        if video_count >= 1:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "شما به سقف مجاز پردازش ویدیو در پلن رایگان (۱ ویدیو) رسیده‌اید. "
+                    "برای پردازش ویدیوهای بیشتر، لطفاً حساب خود را ارتقا دهید."
+                ),
+            )
+
     video_id = extract_video_id(request.video_url)
     if not video_id:
         raise HTTPException(
@@ -75,19 +101,23 @@ async def process_video(request: VideoRequest) -> ProcessVideoResponse:
             process_and_ingest_video,
             transcript,
             video_id,
-            request.user_id,
+            # 🛡️ پوشش امنیتی: به جای request.user_id، از متغیر امن user_id استفاده می‌کنیم
+            user_id, 
         )
         
         target_chat_id = request.chat_id
-        existing_chat = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
+        # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id استخراج شده از توکن
+        existing_chat = await asyncio.to_thread(get_chat, target_chat_id, user_id)
         
         if not existing_chat:
-            await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "New Chat")
+            # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id
+            await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
 
+        # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id
         await asyncio.to_thread(
             update_chat_video_id,
             target_chat_id,
-            request.user_id,
+            user_id,
             video_id,
         )
 

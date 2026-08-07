@@ -47,6 +47,14 @@ class Settings:
             "SUPABASE_SERVICE_ROLE_KEY", ""
         ).strip()
 
+        # --- 🛡️ Clerk (JWT verification) ---
+        # همان چیزی که در .env شما با نام CLERK_FRONTEND_API ست شده — این همان "issuer" ای
+        # است که در JWT کلرک به‌عنوان claim `iss` قرار می‌گیرد و JWKS از زیرمسیر
+        # `{clerk_frontend_api}/.well-known/jwks.json` آن قابل دریافت است.
+        self.clerk_frontend_api = os.getenv("CLERK_FRONTEND_API", "").strip()
+        # alias با نام رایج‌تر issuer_url، تا در بقیه‌ی کد (auth.py) با هر دو اسم قابل خواندن باشد
+        self.clerk_issuer_url = self.clerk_frontend_api
+
     def validate_for_ingestion(self) -> None:
         missing = [
             name
@@ -60,6 +68,20 @@ class Settings:
         if missing:
             raise ValueError(
                 f"Missing required environment variables: {', '.join(missing)}"
+            )
+
+    def validate_for_auth(self) -> None:
+        """Raise a clear error at startup if Clerk auth isn't configured.
+
+        Called from `main.py`'s lifespan so a missing CLERK_FRONTEND_API is caught the
+        moment the server starts (with a clear log message), instead of surfacing later as
+        a confusing AttributeError/401 on the very first authenticated request.
+        """
+        if not self.clerk_frontend_api:
+            raise ValueError(
+                "Missing required environment variable: CLERK_FRONTEND_API "
+                "(این مقدار باید همان Frontend API شما از Clerk Dashboard → API Keys باشد، "
+                "چیزی شبیه 'https://your-app-name.clerk.accounts.dev')"
             )
 
 

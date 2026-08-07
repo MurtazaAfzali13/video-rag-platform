@@ -1,27 +1,28 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
-import { useParams, useSearchParams, useRouter } from "next/navigation"; // useRouter اضافه شد
+import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useChatUserId } from "@/hooks/useChatUserId";
 import { useVideo } from "@/context/VideoContext";
 import { fetchChatMeta, fetchChatMessages, sendChatMessage } from "@/lib/chat-api";
+import { parseTimestampsFromText } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
 import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
 import ChatInterface from "@/components/chat/ChatInterface";
 
-function formatSecondsToTimestamp(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
-}
+// 🛡️ پوشش امنیتی: وارد کردن هوک کلرک
+import { useAuth } from "@clerk/nextjs";
 
 export default function ChatPage() {
   const params = useParams();
   const searchParams = useSearchParams();
-  const router = useRouter(); // اضافه شد
+  const router = useRouter();
   const chatId = params.chatId as string;
   const initialVideoUrl = searchParams.get("videoUrl");
   const userId = useChatUserId();
+  
+  // 🛡️ دریافت تابع استخراج توکن کلرک
+  const { getToken } = useAuth();
   
   const { setActiveVideoId, setTimelineItems, timelineItems } = useVideo();
 
@@ -34,75 +35,58 @@ export default function ChatPage() {
   const messageIdCounter = useRef(0);
   const processingTriggered = useRef(false);
 
-  const loadChatData = useCallback(() => {
-    if (!chatId || !userId) return;
+  const loadChatData = useCallback(async () => {
+    if (!chatId) return;
     setIsLoadingChat(true);
 
-    Promise.all([
-      fetchChatMeta(chatId, userId),
-      fetchChatMessages(chatId, userId),
-    ])
-      .then(([meta, msgs]) => {
-        setChat(meta);
-        setMessages(msgs);
-        if (meta.video_id) {
-          setActiveVideoId(meta.video_id);
-        }
+    try {
+      // 🛡️ دریافت توکن برای ارسال به توابع chat-api
+      const token = await getToken();
+      
+      // 🛡️ رفع خطای تایپ‌اسکریپت (Type Narrowing)
+      if (!token) {
+        throw new Error("احراز هویت نامعتبر است (توکن یافت نشد).");
+      }
+      
+      const [meta, msgs] = await Promise.all([
+        fetchChatMeta(chatId, token),
+        fetchChatMessages(chatId, token),
+      ]);
+      
+      setChat(meta);
+      setMessages(msgs);
+      if (meta.video_id) {
+        setActiveVideoId(meta.video_id);
+      }
 
-        const timeline: Array<{ id: string; time: string; title: string; description?: string }> = [];
-        msgs.forEach((msg: Message) => {
-          if (msg.role !== "assistant") return;
-
-          // پیام‌ها JSON ساختاریافته از بک‌اند هستند (qa_response یا video_summary).
-          // عنوان هر آیتم تایم‌لاین باید از خودِ محتوای ویدیو (title/point) بیاید،
-          // نه از سوالی که کاربر پرسیده.
-          try {
-            const parsed = JSON.parse(msg.content);
-
-            if (parsed?.type === "qa_response" && Array.isArray(parsed.sources)) {
-              parsed.sources.forEach((source: any, i: number) => {
-                if (source.source_type === "video" && source.start_time !== undefined && source.start_time !== null) {
-                  const time = formatSecondsToTimestamp(source.start_time);
-                  if (!timeline.find((t) => t.time === time)) {
-                    timeline.push({
-                      id: `${msg.id}-src-${i}`,
-                      time,
-                      title: source.title || "بخش نامشخص",
-                      description: source.description,
-                    });
-                  }
-                }
-              });
-            } else if (parsed?.type === "video_summary" && Array.isArray(parsed.key_takeaways)) {
-              parsed.key_takeaways.forEach((k: any, i: number) => {
-                if (k.timestamp && !timeline.find((t) => t.time === k.timestamp)) {
-                  timeline.push({
-                    id: `${msg.id}-kt-${i}`,
-                    time: k.timestamp,
-                    title: k.point?.slice(0, 60) ?? "نکته کلیدی",
-                  });
-                }
-              });
+      const timeline: Array<{ id: string; time: string; title: string }> = [];
+      msgs.forEach((msg: Message) => {
+        if (msg.role === "assistant") {
+          const timestamps = parseTimestampsFromText(msg.content);
+          timestamps.forEach(({ time }, i) => {
+            const id = `${msg.id}-${i}`;
+            if (!timeline.find((t) => t.time === time)) {
+              timeline.push({ id, time, title: `From history` });
             }
-          } catch {
-            // پیام قدیمی/متنی (Legacy) است، نه JSON — چیزی برای استخراج امن نداریم، رد می‌شویم.
-          }
-        });
-        if (timeline.length) setTimelineItems(timeline);
-      })
-      .catch((err) => {
-        console.error("Error loading chat context:", err);
-      })
-      .finally(() => setIsLoadingChat(false));
-  }, [chatId, userId, setActiveVideoId, setTimelineItems]);
+          });
+        }
+      });
+      if (timeline.length) setTimelineItems(timeline);
+    } catch (err) {
+      console.error("Error loading chat context:", err);
+    } finally {
+      setIsLoadingChat(false);
+    }
+  }, [chatId, setActiveVideoId, setTimelineItems, getToken]);
 
   useEffect(() => {
     if (!initialVideoUrl) {
       loadChatData();
     }
-  }, [chatId, userId, initialVideoUrl, loadChatData]);
+  }, [chatId, initialVideoUrl, loadChatData]);
 
   useEffect(() => {
+    // 🛡️ متغیر userId فقط برای اطمینان از لاگین بودن چک می‌شود
     if (initialVideoUrl && userId && chatId && !processingTriggered.current) {
       processingTriggered.current = true;
       
@@ -110,22 +94,23 @@ export default function ChatPage() {
         setIsVideoProcessing(true);
         setIsLoadingChat(true);
         try {
+          // در اینجا نیازی به اضافه کردن دستی توکن به هدر نیست، چون درخواست
+          // به API داخلی Next.js می‌رود و خود Next.js و Clerk متوجه هویت کاربر می‌شوند
           const res = await fetch("/api/process-video", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               video_url: initialVideoUrl,
-              user_id: userId,
               chat_id: chatId,
+              // 🛡️ فیلد user_id از اینجا برای همیشه پاک شد!
             }),
           });
+          
           const data = await res.json();
           
           if (!res.ok) {
             console.error("Process video error:", data);
-            // ✅ اصلاح اصلی: نمایش پیام خطای ارسالی از سرور
             alert(data.error || "خطا در پردازش ویدیو. لطفاً دوباره تلاش کنید.");
-            // کاربر را به صفحه اصلی برمی‌گردانیم تا در صفحه خالی نماند
             router.push("/chatbot");
             return;
           }
@@ -135,7 +120,7 @@ export default function ChatPage() {
         } catch (error) {
           console.error("Failed to process video:", error);
           alert("خطای ارتباط با سرور. لطفاً دوباره تلاش کنید.");
-          router.push("/chatbot"); // برگشت به صفحه اصلی در صورت خطای شبکه
+          router.push("/chatbot");
         } finally {
           setIsVideoProcessing(false);
           setIsLoadingChat(false);
@@ -148,7 +133,6 @@ export default function ChatPage() {
 
   const handleSendMessage = useCallback(
     async (content: string) => {
-      // بقیه کدهای این بخش بدون تغییر است...
       if (!userId || !content.trim()) return;
 
       const userMsg: Message = {
@@ -162,7 +146,17 @@ export default function ChatPage() {
       setIsTyping(true);
 
       try {
-        const data = await sendChatMessage(content, userId, chatId, chat?.video_id ?? null);
+        // 🛡️ توکن دریافت و به API ارسال می‌شود
+        const token = await getToken();
+        
+        // 🛡️ رفع خطای تایپ‌اسکریپت
+        if (!token) {
+          console.error("Token is null. User might be logged out.");
+          alert("خطا در احراز هویت. لطفاً دوباره وارد حساب کاربری خود شوید.");
+          return;
+        }
+
+        const data = await sendChatMessage(content, token, chatId, chat?.video_id ?? null);
 
         const assistantMsg: Message = {
           id: `local-ai-${++messageIdCounter.current}`,
@@ -173,52 +167,27 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // مهم: اینجا دیگر از سوال کاربر (`content`) به عنوان عنوان تایم‌لاین استفاده نمی‌کنیم.
-        // عنوان و توضیح واقعی هر رفرنس از خودِ پاسخ ساختاریافته (sources / key_takeaways)
-        // که مدل بر اساس محتوای ویدیو تولید کرده می‌آید.
-        try {
-          const parsed = JSON.parse(data.response);
-          let newItems: typeof timelineItems = [];
-
-          if (parsed?.type === "qa_response" && Array.isArray(parsed.sources)) {
-            newItems = parsed.sources
-              .filter(
-                (s: any) =>
-                  s.source_type === "video" && s.start_time !== undefined && s.start_time !== null
-              )
-              .map((s: any, i: number) => ({
-                id: `${assistantMsg.id}-src-${i}`,
-                time: formatSecondsToTimestamp(s.start_time),
-                title: s.title || "بخش نامشخص",
-                description: s.description,
-              }));
-          } else if (parsed?.type === "video_summary" && Array.isArray(parsed.key_takeaways)) {
-            newItems = parsed.key_takeaways
-              .filter((k: any) => !!k.timestamp)
-              .map((k: any, i: number) => ({
-                id: `${assistantMsg.id}-kt-${i}`,
-                time: k.timestamp,
-                title: k.point?.slice(0, 60) ?? "نکته کلیدی",
-              }));
+        const timestamps = parseTimestampsFromText(data.response);
+        if (timestamps.length > 0) {
+          const newItems = timestamps
+            .filter((t) => !timelineItems.find((p) => p.time === t.time))
+            .map(({ time }, i) => ({
+              id: `${assistantMsg.id}-${i}`,
+              time,
+              title: content.slice(0, 50),
+            }));
+          if (newItems.length) {
+            setTimelineItems([...timelineItems, ...newItems]);
           }
-
-          const dedupedNewItems = newItems.filter(
-            (item) => !timelineItems.find((p) => p.time === item.time)
-          );
-
-          if (dedupedNewItems.length) {
-            setTimelineItems([...timelineItems, ...dedupedNewItems]);
-          }
-        } catch {
-          // پاسخ JSON ساختاریافته نبود (حالت Legacy متنی) — چیزی برای استخراج امن نداریم.
         }
       } catch (err) {
         console.error(err);
+        alert("خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
       } finally {
         setIsTyping(false);
       }
     },
-    [userId, chatId, chat?.video_id, setTimelineItems, timelineItems]
+    [userId, chatId, chat?.video_id, setTimelineItems, timelineItems, getToken]
   );
 
   const handleClearChat = useCallback(() => {

@@ -70,6 +70,77 @@ def _ensure_video_exists(video_id: str, user_id: str) -> None:
             raise ChatStoreError(f"امکان ثبت ویدیو در دیتابیس وجود ندارد: {upsert_res.text}")
 
 
+def _exact_count(table: str, params: dict[str, str]) -> int:
+    """Get an exact row count for a filtered Supabase table WITHOUT fetching the rows.
+
+    Uses PostgREST's `Prefer: count=exact` + a HEAD request, so the response body is empty
+    and we only pay for the count itself (no row data transferred). The count comes back in
+    the `Content-Range` response header, formatted like `"0-0/42"` (or `"*/0"` for zero rows).
+    """
+    headers = _headers(get_settings().supabase_service_role_key)
+    headers["Prefer"] = "count=exact"
+
+    with httpx.Client(timeout=15.0) as client:
+        response = client.head(f"{_base_url()}/rest/v1/{table}", headers=headers, params=params)
+
+    if response.status_code >= 400:
+        logger.error("Failed to count rows in %s: %s %s", table, response.status_code, response.text)
+        raise ChatStoreError(f"Failed to count rows in {table}: HTTP {response.status_code}")
+
+    content_range = response.headers.get("Content-Range", "")
+    if "/" in content_range:
+        total_str = content_range.rsplit("/", 1)[-1]
+        if total_str.isdigit():
+            return int(total_str)
+
+    return 0
+
+
+def get_user_video_count(user_id: str) -> int:
+    """Count how many distinct videos this user has processed, for the free-tier video quota.
+
+    IMPORTANT DESIGN NOTE: this intentionally counts via `chats.video_id` scoped to this
+    `user_id`, rather than counting rows in the shared `videos` table filtered by `user_id`.
+
+    Why: `_ensure_video_exists` only ever creates a `videos` row for the FIRST user who ever
+    processes a given YouTube video — it's a shared FK-safety cache keyed by the YouTube
+    video ID, not a per-user ownership ledger. If a second user later processes that same
+    already-cached video, no new `videos` row is created for them (the existence check only
+    looks at the video id, not at who owns it), so counting from `videos.user_id` would
+    UNDER-COUNT that second user's quota usage — a free-tier user could process unlimited
+    *popular/already-processed* videos and never hit the quota. Counting via the user's own
+    `chats` rows avoids this entirely, since each user's chat-to-video links are private to
+    them regardless of who processed the video first.
+    """
+    return _exact_count(
+        "chats",
+        {"user_id": f"eq.{user_id}", "video_id": "not.is.null"},
+    )
+
+
+def get_user_message_count(user_id: str) -> int:
+    """Count how many user-authored chat messages (questions) this user has ever sent.
+
+    Only `role = "user"` messages count against the quota — the assistant's replies are not
+    counted, since the limit is meant to cap how many questions/AI invocations a free-tier
+    user can make, not how many total rows exist in the conversation.
+
+    `messages` doesn't carry `user_id` directly (only `chat_id`), so this first resolves the
+    user's own chat ids, then counts messages restricted to those chats. Because `chat_id` is
+    only ever taken from the user's own resolved chat list, this can never count another
+    user's messages.
+    """
+    chat_ids = [chat["id"] for chat in list_chats(user_id, limit=1000)]
+    if not chat_ids:
+        return 0
+
+    ids_str = ",".join(chat_ids)
+    return _exact_count(
+        "messages",
+        {"chat_id": f"in.({ids_str})", "role": "eq.user"},
+    )
+
+
 def create_chat(
     *,
     user_id: str,

@@ -2,7 +2,9 @@ import asyncio
 import json
 import logging
 from typing import Optional
-from fastapi import APIRouter, HTTPException, Query
+
+# 🛡️ پوشش امنیتی: اضافه شدن Depends برای احراز هویت
+from fastapi import APIRouter, HTTPException, Query, Depends
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage
 
@@ -17,11 +19,14 @@ from app.chat_store import (
     update_chat_title,
     update_chat_video_id,
     save_workflow_trace,
+    get_user_message_count,
 )
+
+
+from app.auth import get_current_user, get_current_user_with_role, AuthenticatedUser
 
 logger = logging.getLogger(__name__)
 
-# ساخت Router اختصاصی برای چت‌ها
 router = APIRouter(prefix="/api", tags=["Chat"])
 
 
@@ -29,7 +34,6 @@ router = APIRouter(prefix="/api", tags=["Chat"])
 
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The user's question")
-    user_id: str = Field(..., min_length=1, description="User namespace in Pinecone")
     chat_id: str = Field(..., min_length=1, description="Mandatory existing or new chat session UUID from client")
     video_id: Optional[str] = Field(
         None, description="YouTube video ID for video-scoped RAG (null = multi-video search)"
@@ -37,7 +41,6 @@ class ChatRequest(BaseModel):
 
 
 class UpdateChatRequest(BaseModel):
-    user_id: str = Field(..., min_length=1)
     video_id: Optional[str] = Field(None, description="YouTube video ID to bind to this chat")
 
 
@@ -66,7 +69,7 @@ class MessageRecord(BaseModel):
 
 @router.get("/chats", response_model=list[ChatSummary])
 async def get_user_chats(
-    user_id: str = Query(..., min_length=1),
+    user_id: str = Depends(get_current_user),
     limit: int = Query(50, ge=1, le=100),
 ) -> list[ChatSummary]:
     try:
@@ -79,7 +82,7 @@ async def get_user_chats(
 @router.get("/chats/{chat_id}", response_model=ChatSummary)
 async def get_chat_metadata(
     chat_id: str,
-    user_id: str = Query(..., min_length=1),
+    user_id: str = Depends(get_current_user),
 ) -> ChatSummary:
     try:
         chat = await asyncio.to_thread(get_chat, chat_id, user_id)
@@ -94,9 +97,10 @@ async def get_chat_metadata(
 async def update_chat_metadata(
     chat_id: str,
     request: UpdateChatRequest,
+    user_id: str = Depends(get_current_user),
 ) -> ChatSummary:
     try:
-        existing = await asyncio.to_thread(get_chat, chat_id, request.user_id)
+        existing = await asyncio.to_thread(get_chat, chat_id, user_id)
         if not existing:
             raise HTTPException(status_code=404, detail="Chat not found.")
 
@@ -104,11 +108,11 @@ async def update_chat_metadata(
             await asyncio.to_thread(
                 update_chat_video_id,
                 chat_id,
-                request.user_id,
+                user_id,
                 request.video_id,
             )
 
-        updated = await asyncio.to_thread(get_chat, chat_id, request.user_id)
+        updated = await asyncio.to_thread(get_chat, chat_id, user_id)
         if not updated:
             raise HTTPException(status_code=404, detail="Chat not found.")
         return ChatSummary(**updated)
@@ -119,8 +123,8 @@ async def update_chat_metadata(
 @router.get("/chats/{chat_id}/messages", response_model=list[MessageRecord])
 async def get_chat_messages(
     chat_id: str,
-    user_id: str = Query(..., min_length=1),
     limit: int = Query(200, ge=1, le=500),
+    user_id: str = Depends(get_current_user),
 ) -> list[MessageRecord]:
     try:
         chat = await asyncio.to_thread(get_chat, chat_id, user_id)
@@ -134,13 +138,31 @@ async def get_chat_messages(
 
 
 @router.post("/chat", response_model=ChatResponse)
-async def chat_endpoint(request: ChatRequest) -> ChatResponse:
+async def chat_endpoint(
+    request: ChatRequest,
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
+) -> ChatResponse:
+    user_id = auth.user_id
     try:
+        # --- 🚦 RBAC / Quota: کاربر Admin نامحدود است، کاربر Free حداکثر ۲ پیام ---
+        # این چک عمداً قبل از ذخیره‌ی پیام کاربر و اجرای گراف LangGraph قرار گرفته: اگر کاربر
+        # به سقف رسیده، نه پیام سومش ذخیره می‌شود و نه هزینه‌ی اجرای مدل صرف می‌شود.
+        if not auth.is_admin:
+            message_count = await asyncio.to_thread(get_user_message_count, user_id)
+            if message_count >= 2:
+                raise HTTPException(
+                    status_code=403,
+                    detail=(
+                        "شما به سقف مجاز پیام در پلن رایگان (۲ پیام) رسیده‌اید. "
+                        "برای ادامه‌ی گفتگو، لطفاً حساب خود را ارتقا دهید."
+                    ),
+                )
+
         target_chat_id = request.chat_id
         
-        existing = await asyncio.to_thread(get_chat, target_chat_id, request.user_id)
+        existing = await asyncio.to_thread(get_chat, target_chat_id, user_id)
         if not existing:
-            await asyncio.to_thread(init_chat, request.user_id, target_chat_id, "New Chat")
+            await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
 
         existing_messages = await asyncio.to_thread(list_messages, target_chat_id, limit=1)
         is_first_interaction = len(existing_messages) == 0
@@ -154,11 +176,10 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
 
         search_scope = "single_video" if request.video_id else "general"
 
-        # اضافه کردن فیلدهای زمان به وضعیت اولیه گراف
         initial_state = {
             "messages": [HumanMessage(content=request.query)],
             "query": request.query,
-            "user_id": request.user_id,
+            "user_id": user_id,
             "video_id": request.video_id,
             "search_scope": search_scope,
             "next_node": None,
@@ -208,9 +229,7 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
 
         assistant_response = result["response"]
 
-        # --- بخش اصلاح شده برای استخراج عنوان چت ---
         if is_first_interaction:
-            # استفاده مستقیم از سوال کاربر برای ساخت عنوان چت
             clean_text = request.query.strip()
             
             new_title = clean_text[:35]
@@ -220,7 +239,7 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
             await asyncio.to_thread(
                 update_chat_title,
                 target_chat_id,
-                request.user_id,
+                user_id,
                 new_title,
             )
         # --- پایان بخش اصلاح شده ---
@@ -237,12 +256,12 @@ async def chat_endpoint(request: ChatRequest) -> ChatResponse:
     except HTTPException:
         raise
     except ChatStoreError as exc:
-        logger.exception("Chat persistence error for user %s", request.user_id)
+        logger.exception("Chat persistence error for user %s", user_id)
         raise HTTPException(status_code=503, detail=f"خطا در ذخیره‌سازی پیام: {str(exc)}") from exc
     except Exception as exc:
         logger.exception(
             "Error occurred during LangGraph workflow execution for user %s",
-            request.user_id,
+            user_id,
         )
         raise HTTPException(
             status_code=500,
