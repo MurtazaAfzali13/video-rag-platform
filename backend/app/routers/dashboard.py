@@ -3,12 +3,12 @@ from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.chat_store import (
+from app.dashboard_store import (
     get_user_workflow_distribution,
     get_user_metrics,
     get_user_questions_metrics,
-    ChatStoreError,
 )
+from app.chat_store import ChatStoreError
 from app.auth import get_current_user_with_role, AuthenticatedUser
 
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
@@ -85,11 +85,14 @@ async def metrics_endpoint(
 
 @router.get("/questions-metrics", response_model=QuestionsMetricsSchema)
 async def questions_metrics_endpoint(
-    auth: AuthenticatedUser = Depends(get_current_user_with_role)
+    timeframe: Timeframe = Query("week", description="بازه‌ی زمانی: today | week | month | all"),
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
-    """دریافت آمار سوالات پرسیده‌شده (پیام‌های کاربر) برای KPI و چارت هفتگی"""
+    """دریافت آمار سوالات پرسیده‌شده برای KPI و چارت، بر اساس بازه‌ی زمانی انتخابی"""
     try:
-        metrics_data = await asyncio.to_thread(get_user_questions_metrics, auth.user_id, auth.is_admin)
+        metrics_data = await asyncio.to_thread(
+            get_user_questions_metrics, auth.user_id, auth.is_admin, timeframe
+        )
         return metrics_data
     except ChatStoreError as exc:
         raise HTTPException(

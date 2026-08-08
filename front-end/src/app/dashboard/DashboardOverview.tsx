@@ -10,15 +10,13 @@ import { useDashboard } from "@/context/DashboardContext";
 
 export function DashboardOverview() {
   const { fetchMetrics, fetchQuestionsMetrics, fetchWorkflowDistribution } = useDashboard();
-  const { user } = useUser(); // 🛡️ دریافت اطلاعات کاربر فعلی
-
+  const { user } = useUser(); 
   useEffect(() => {
     fetchMetrics();
     fetchQuestionsMetrics();
     fetchWorkflowDistribution();
-  }, [fetchMetrics, fetchQuestionsMetrics, fetchWorkflowDistribution]);
+  }, []);
 
-  // استخراج نام کاربر (اگر نامی ثبت نکرده بود، کلمه پیش‌فرض نمایش داده می‌شود)
   const firstName = user?.firstName || "there";
 
   return (

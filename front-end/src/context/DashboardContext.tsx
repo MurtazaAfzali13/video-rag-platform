@@ -4,7 +4,9 @@ import React, {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useReducer,
+  useRef,
   ReactNode,
 } from "react";
 import { useAuth } from "@clerk/nextjs";
@@ -20,6 +22,7 @@ export interface DonutDatum {
 }
 
 export type WorkflowTimeframe = "today" | "week" | "month" | "all";
+export type QuestionsTimeframe = "today" | "week" | "month" | "all";
 
 export interface DashboardMetrics {
   web_searches: number;
@@ -40,6 +43,7 @@ export interface QuestionsMetricsData {
 interface DashboardState {
   workflowDistribution: DonutDatum[];
   workflowTimeframe: WorkflowTimeframe;
+  questionsTimeframe: QuestionsTimeframe;
   metricsData: DashboardMetrics | null;
   questionsMetrics: QuestionsMetricsData | null;
   isLoading: boolean;
@@ -55,6 +59,7 @@ type DashboardAction =
   | { type: "FETCH_SUCCESS"; payload: DonutDatum[] }
   | { type: "FETCH_FAILURE"; payload: string }
   | { type: "SET_WORKFLOW_TIMEFRAME"; payload: WorkflowTimeframe }
+  | { type: "SET_QUESTIONS_TIMEFRAME"; payload: QuestionsTimeframe }
   | { type: "FETCH_METRICS_START" }
   | { type: "FETCH_METRICS_SUCCESS"; payload: DashboardMetrics }
   | { type: "FETCH_METRICS_FAILURE"; payload: string }
@@ -67,6 +72,7 @@ type DashboardAction =
 const initialState: DashboardState = {
   workflowDistribution: [],
   workflowTimeframe: "all",
+  questionsTimeframe: "week",
   metricsData: null,
   questionsMetrics: null,
   isLoading: false,
@@ -87,6 +93,8 @@ const dashboardReducer = (state: DashboardState, action: DashboardAction): Dashb
       return { ...state, isLoading: false, error: action.payload };
     case "SET_WORKFLOW_TIMEFRAME":
       return { ...state, workflowTimeframe: action.payload };
+    case "SET_QUESTIONS_TIMEFRAME":
+      return { ...state, questionsTimeframe: action.payload };
 
     case "FETCH_METRICS_START":
       return { ...state, isMetricsLoading: true, metricsError: null };
@@ -113,7 +121,7 @@ const DashboardContext = createContext<{
   state: DashboardState;
   fetchWorkflowDistribution: (timeframe?: WorkflowTimeframe) => Promise<void>;
   fetchMetrics: () => Promise<void>;
-  fetchQuestionsMetrics: () => Promise<void>;
+  fetchQuestionsMetrics: (timeframe?: QuestionsTimeframe) => Promise<void>;
 } | undefined>(undefined);
 
 // ---------------- Provider ----------------
@@ -124,14 +132,28 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
+  // 🔑 این دو ref همیشه آخرین تایم‌فریم رو نگه می‌دارن، بدون این‌که توی dependency
+  // آرایه‌ی useCallback قرار بگیرن — پس هویت (reference) خود تابع هیچ‌وقت عوض نمی‌شه.
+  const workflowTimeframeRef = useRef(state.workflowTimeframe);
+  const questionsTimeframeRef = useRef(state.questionsTimeframe);
+
+  useEffect(() => {
+    workflowTimeframeRef.current = state.workflowTimeframe;
+  }, [state.workflowTimeframe]);
+
+  useEffect(() => {
+    questionsTimeframeRef.current = state.questionsTimeframe;
+  }, [state.questionsTimeframe]);
+
   const fetchWorkflowDistribution = useCallback(
-    async (timeframe: WorkflowTimeframe = state.workflowTimeframe) => {
+    async (timeframe?: WorkflowTimeframe) => {
+      const tf = timeframe ?? workflowTimeframeRef.current;
       dispatch({ type: "FETCH_START" });
-      dispatch({ type: "SET_WORKFLOW_TIMEFRAME", payload: timeframe });
+      dispatch({ type: "SET_WORKFLOW_TIMEFRAME", payload: tf });
       try {
         const token = await getToken();
         const res = await fetch(
-          `${baseUrl}/api/dashboard/workflow-distribution?timeframe=${timeframe}`,
+          `${baseUrl}/api/dashboard/workflow-distribution?timeframe=${tf}`,
           { headers: { Authorization: `Bearer ${token}` } }
         );
         if (!res.ok) throw new Error("مشکلی در دریافت اطلاعات چارت رخ داد.");
@@ -143,7 +165,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "FETCH_FAILURE", payload: message });
       }
     },
-    [baseUrl, getToken, state.workflowTimeframe]
+    [baseUrl, getToken] // 🔑 دیگه به state.workflowTimeframe وابسته نیست → هویت ثابت
   );
 
   const fetchMetrics = useCallback(async () => {
@@ -164,23 +186,29 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     }
   }, [baseUrl, getToken]);
 
-  const fetchQuestionsMetrics = useCallback(async () => {
-    dispatch({ type: "FETCH_QUESTIONS_START" });
-    try {
-      const token = await getToken();
-      const res = await fetch(`${baseUrl}/api/dashboard/questions-metrics`, {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("مشکلی در دریافت متریک سوالات رخ داد.");
+  const fetchQuestionsMetrics = useCallback(
+    async (timeframe?: QuestionsTimeframe) => {
+      const tf = timeframe ?? questionsTimeframeRef.current;
+      dispatch({ type: "FETCH_QUESTIONS_START" });
+      dispatch({ type: "SET_QUESTIONS_TIMEFRAME", payload: tf });
+      try {
+        const token = await getToken();
+        const res = await fetch(
+          `${baseUrl}/api/dashboard/questions-metrics?timeframe=${tf}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) throw new Error("مشکلی در دریافت متریک سوالات رخ داد.");
 
-      const data = await res.json();
-      dispatch({ type: "FETCH_QUESTIONS_SUCCESS", payload: data });
-    } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "خطای ناشناخته در دریافت متریک سوالات";
-      dispatch({ type: "FETCH_QUESTIONS_FAILURE", payload: message });
-    }
-  }, [baseUrl, getToken]);
+        const data = await res.json();
+        dispatch({ type: "FETCH_QUESTIONS_SUCCESS", payload: data });
+      } catch (err: unknown) {
+        const message =
+          err instanceof Error ? err.message : "خطای ناشناخته در دریافت متریک سوالات";
+        dispatch({ type: "FETCH_QUESTIONS_FAILURE", payload: message });
+      }
+    },
+    [baseUrl, getToken] // 🔑 دیگه به state.questionsTimeframe وابسته نیست → هویت ثابت
+  );
 
   return (
     <DashboardContext.Provider
