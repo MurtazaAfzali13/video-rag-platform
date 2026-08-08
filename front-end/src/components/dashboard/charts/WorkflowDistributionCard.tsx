@@ -67,16 +67,27 @@ export function WorkflowDistributionCard() {
   const { workflowDistribution, workflowTimeframe, isLoading, error } = state;
 
   const displayDistribution = useMemo(() => {
-    const source =
-      workflowDistribution.length > 0 ? workflowDistribution : defaultWorkflowDistribution;
-
+    // 🔑 defaultWorkflowDistribution اینجا فقط به‌عنوان "بلوپرینت" متادیتا استفاده
+    // می‌شه (برای گرفتن label و color هر گره) — هرگز به‌عنوان fallback عددی.
+    // اگه API برای یک گره دیتا نداشته باشه (مثلاً کاربر جدید با آرایه‌ی خالی []),
+    // همون گره با value: 0 و percentage: 0 نمایش داده می‌شه، نه با عدد mock.
     const coreNodes = CORE_NODE_IDS.map((nodeId) => {
-      const fromApi = source.find((d) => d.id === nodeId);
-      const fromMock = defaultWorkflowDistribution.find((d) => d.id === nodeId);
-      return fromApi ?? fromMock!;
+      const blueprint = defaultWorkflowDistribution.find((d) => d.id === nodeId)!;
+      const fromApi = workflowDistribution.find((d) => d.id === nodeId);
+
+      return fromApi
+        ? fromApi
+        : { ...blueprint, value: 0, percentage: 0 };
     });
 
-    const otherNode = source.find((d) => d.id === "other");
+    const otherFromApi = workflowDistribution.find((d) => d.id === "other");
+    const otherBlueprint = defaultWorkflowDistribution.find((d) => d.id === "other");
+    const otherNode = otherFromApi
+      ? otherFromApi
+      : otherBlueprint
+      ? { ...otherBlueprint, value: 0, percentage: 0 }
+      : undefined;
+
     const merged = otherNode ? [...coreNodes, otherNode] : coreNodes;
 
     return recalculatePercentages(merged);
