@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage
 
 from app.graph.workflow import get_agent_graph
-from app.chat_store import (
+from app.chat_store import(
     ChatStoreError,
     get_chat,
     init_chat,
@@ -18,9 +18,9 @@ from app.chat_store import (
     save_message,
     update_chat_title,
     update_chat_video_id,
-    save_workflow_trace,
     get_user_message_count,
 )
+from app.dashboard_store import save_workflow_trace
 
 
 from app.auth import get_current_user, get_current_user_with_role, AuthenticatedUser
