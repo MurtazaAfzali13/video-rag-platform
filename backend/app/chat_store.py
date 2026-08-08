@@ -354,19 +354,33 @@ def update_chat_title(chat_id: str, user_id: str, title: str) -> dict[str, Any]:
     rows = response.json()
     return rows[0] if isinstance(rows, list) and rows else {"id": chat_id, "title": title}
 
+_VALID_TIMEFRAMES = {"today", "week", "month", "all"}
 
-def get_user_workflow_distribution(user_id: str, is_admin: bool = False) -> list[dict[str, Any]]:
+
+def get_user_workflow_distribution(
+    user_id: str,
+    is_admin: bool = False,
+    timeframe: str = "all",
+) -> list[dict[str, Any]]:
     """Fetch aggregated LangGraph node execution stats via Supabase RPC."""
+    if timeframe not in _VALID_TIMEFRAMES:
+        timeframe = "all"
+
     url = f"{_base_url()}/rest/v1/rpc/get_workflow_distribution"
     headers = _headers(get_settings().supabase_service_role_key)
     payload_user_id = None if is_admin else user_id
+
     with httpx.Client(timeout=15.0) as client:
-        response = client.post(url, headers=headers, json={"p_user_id": payload_user_id})
-        
+        response = client.post(
+            url,
+            headers=headers,
+            json={"p_user_id": payload_user_id, "p_timeframe": timeframe},
+        )
+
     if response.status_code >= 400:
         logger.error("Failed to fetch dashboard workflow metrics: %s", response.text)
         raise ChatStoreError(response.text)
-        
+
     return response.json()
 
 

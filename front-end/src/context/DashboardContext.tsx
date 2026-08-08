@@ -7,7 +7,7 @@ import React, {
   useReducer,
   ReactNode,
 } from "react";
-import { useAuth } from "@clerk/nextjs"; // 🛡️ اضافه شدن هوک کِلِرک برای دریافت توکن
+import { useAuth } from "@clerk/nextjs";
 
 // ---------------- Types ----------------
 
@@ -18,6 +18,8 @@ export interface DonutDatum {
   percentage: number;
   color: string;
 }
+
+export type WorkflowTimeframe = "today" | "week" | "month" | "all";
 
 export interface DashboardMetrics {
   web_searches: number;
@@ -37,6 +39,7 @@ export interface QuestionsMetricsData {
 
 interface DashboardState {
   workflowDistribution: DonutDatum[];
+  workflowTimeframe: WorkflowTimeframe;
   metricsData: DashboardMetrics | null;
   questionsMetrics: QuestionsMetricsData | null;
   isLoading: boolean;
@@ -51,6 +54,7 @@ type DashboardAction =
   | { type: "FETCH_START" }
   | { type: "FETCH_SUCCESS"; payload: DonutDatum[] }
   | { type: "FETCH_FAILURE"; payload: string }
+  | { type: "SET_WORKFLOW_TIMEFRAME"; payload: WorkflowTimeframe }
   | { type: "FETCH_METRICS_START" }
   | { type: "FETCH_METRICS_SUCCESS"; payload: DashboardMetrics }
   | { type: "FETCH_METRICS_FAILURE"; payload: string }
@@ -62,6 +66,7 @@ type DashboardAction =
 
 const initialState: DashboardState = {
   workflowDistribution: [],
+  workflowTimeframe: "all",
   metricsData: null,
   questionsMetrics: null,
   isLoading: false,
@@ -80,6 +85,8 @@ const dashboardReducer = (state: DashboardState, action: DashboardAction): Dashb
       return { ...state, isLoading: false, workflowDistribution: action.payload };
     case "FETCH_FAILURE":
       return { ...state, isLoading: false, error: action.payload };
+    case "SET_WORKFLOW_TIMEFRAME":
+      return { ...state, workflowTimeframe: action.payload };
 
     case "FETCH_METRICS_START":
       return { ...state, isMetricsLoading: true, metricsError: null };
@@ -102,10 +109,9 @@ const dashboardReducer = (state: DashboardState, action: DashboardAction): Dashb
 
 // ---------------- Context ----------------
 
-// 💡 رفع خطا: ورودی userId از تعریف توابع حذف شد
 const DashboardContext = createContext<{
   state: DashboardState;
-  fetchWorkflowDistribution: () => Promise<void>;
+  fetchWorkflowDistribution: (timeframe?: WorkflowTimeframe) => Promise<void>;
   fetchMetrics: () => Promise<void>;
   fetchQuestionsMetrics: () => Promise<void>;
 } | undefined>(undefined);
@@ -114,34 +120,38 @@ const DashboardContext = createContext<{
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(dashboardReducer, initialState);
-  const { getToken } = useAuth(); // 🛡️ گرفتن تابع تولید توکن
+  const { getToken } = useAuth();
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  // 💡 رفع خطا: ورودی userId از توابع زیر هم حذف شد
-  const fetchWorkflowDistribution = useCallback(async () => {
-    dispatch({ type: "FETCH_START" });
-    try {
-      const token = await getToken();
-      const res = await fetch(`${baseUrl}/api/dashboard/workflow-distribution`, {
-        headers: { "Authorization": `Bearer ${token}` } // 🛡️ ارسال توکن
-      });
-      if (!res.ok) throw new Error("مشکلی در دریافت اطلاعات چارت رخ داد.");
+  const fetchWorkflowDistribution = useCallback(
+    async (timeframe: WorkflowTimeframe = state.workflowTimeframe) => {
+      dispatch({ type: "FETCH_START" });
+      dispatch({ type: "SET_WORKFLOW_TIMEFRAME", payload: timeframe });
+      try {
+        const token = await getToken();
+        const res = await fetch(
+          `${baseUrl}/api/dashboard/workflow-distribution?timeframe=${timeframe}`,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        if (!res.ok) throw new Error("مشکلی در دریافت اطلاعات چارت رخ داد.");
 
-      const data = await res.json();
-      dispatch({ type: "FETCH_SUCCESS", payload: data });
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "خطای ناشناخته";
-      dispatch({ type: "FETCH_FAILURE", payload: message });
-    }
-  }, [baseUrl, getToken]);
+        const data = await res.json();
+        dispatch({ type: "FETCH_SUCCESS", payload: data });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : "خطای ناشناخته";
+        dispatch({ type: "FETCH_FAILURE", payload: message });
+      }
+    },
+    [baseUrl, getToken, state.workflowTimeframe]
+  );
 
   const fetchMetrics = useCallback(async () => {
     dispatch({ type: "FETCH_METRICS_START" });
     try {
       const token = await getToken();
       const res = await fetch(`${baseUrl}/api/dashboard/metrics`, {
-        headers: { "Authorization": `Bearer ${token}` } // 🛡️ ارسال توکن
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("مشکلی در دریافت متریک‌های داشبورد رخ داد.");
 
@@ -159,7 +169,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     try {
       const token = await getToken();
       const res = await fetch(`${baseUrl}/api/dashboard/questions-metrics`, {
-        headers: { "Authorization": `Bearer ${token}` } // 🛡️ ارسال توکن
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("مشکلی در دریافت متریک سوالات رخ داد.");
 
