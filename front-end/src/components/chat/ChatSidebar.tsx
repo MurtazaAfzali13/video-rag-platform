@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useUser, useClerk, useAuth } from "@clerk/nextjs";
@@ -61,12 +61,25 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
   const [isCreating, setIsCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // 🔑 FIX: chats.length خارج از این تابع، در یک ref نگه داشته می‌شود (نه در dependency
+  // array خود loadChats). چون loadChats خودش در انتها setChats را صدا می‌زند، اگر
+  // chats.length مستقیماً dependency باشد، هر بار طول آرایه عوض شود (مثلاً وقتی عنوان یک
+  // چت از "New Chat" به یک عنوان واقعی تغییر می‌کند و از فیلتر پایین‌تر داخل/خارج می‌شود)
+  // یک نسخه‌ی کاملاً تازه از loadChats ساخته می‌شود — و همین باعث می‌شد effect زیرین
+  // (که به loadChats وابسته است) هر بار cleanup و بلافاصله دوباره اجرا شود: یعنی یک
+  // fetch فوری اضافه، خارج از تایمر ۵ ثانیه‌ای. دقیقاً همین چرخه بود که باعث اسپم شدن
+  // GET /api/chats می‌شد.
+  const chatsLengthRef = useRef(0);
+  useEffect(() => {
+    chatsLengthRef.current = chats.length;
+  }, [chats.length]);
+
   const loadChats = useCallback(async () => {
     if (!isLoaded || !isSignedIn) return;
     
     // وقتی تایمر کار می‌کند، نمی‌خواهیم هر 5 ثانیه علامت لودینگ نشان دهیم
     // پس فقط اگر آرایه چت‌ها خالی بود، isLoading را true می‌کنیم
-    if (chats.length === 0) {
+    if (chatsLengthRef.current === 0) {
       setIsLoading(true);
     }
     
@@ -89,24 +102,48 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
     } finally {
       setIsLoading(false);
     }
-  }, [getToken, isLoaded, isSignedIn, chats.length]);
+  }, [getToken, isLoaded, isSignedIn]);
+
+  // 🔑 FIX: یک ref که همیشه جدیدترین نسخه‌ی loadChats را نگه می‌دارد، تا effectهای پایین
+  // بتوانند بدون قرار دادن خودِ loadChats (که reference اش می‌تواند به‌خاطر getToken هم
+  // ناپایدار باشد) در dependency array، آن را صدا بزنند. این یعنی effect تایمر دیگر هرگز
+  // به‌خاطر تغییر reference تابع، ری‌استارت نمی‌شود.
+  const loadChatsRef = useRef(loadChats);
+  useEffect(() => {
+    loadChatsRef.current = loadChats;
+  }, [loadChats]);
 
   // ------------------------------------------------------------------
-  // 🛡️ بخش اصلاح شده: بازگرداندن آپدیت خودکار (تایمر ۵ ثانیه‌ای)
+  // 🛡️ آپدیت خودکار (تایمر ۵ ثانیه‌ای) — این effect فقط یک‌بار (وقتی auth آماده شد)
+  // اجرا می‌شود و دیگر هیچ‌وقت به‌خاطر تغییر chats/loadChats ری‌استارت نمی‌شود، چون
+  // dependency array اش فقط شامل primitive های واقعاً پایدار (isLoaded, isSignedIn) است.
   // ------------------------------------------------------------------
   useEffect(() => {
-    if (isLoaded && isSignedIn) {
-      loadChats(); // بارگذاری اولیه
-      
-      // هر ۵ ثانیه چک می‌کند تا اگر عنوانی تغییر کرد یا چت جدیدی ساخته شد، سایدبار آپدیت شود
-      const interval = setInterval(() => {
-        loadChats();
-      }, 5000);
-      
-      // پاک کردن تایمر در صورت خروج از کامپوننت
-      return () => clearInterval(interval);
+    if (!isLoaded || !isSignedIn) return;
+
+    loadChatsRef.current(); // بارگذاری اولیه
+
+    // هر ۵ ثانیه چک می‌کند تا اگر عنوانی تغییر کرد یا چت جدیدی ساخته شد، سایدبار آپدیت شود
+    const interval = setInterval(() => {
+      loadChatsRef.current();
+    }, 5000);
+
+    // پاک کردن تایمر در صورت خروج از کامپوننت
+    return () => clearInterval(interval);
+  }, [isLoaded, isSignedIn]);
+
+  // 🔑 FIX: رفرش فوری هنگام تغییر مسیر (مثلاً درست بعد از ساخت یک چت تازه) به‌صورت یک
+  // effect کاملاً جدا نگه داشته شده — تا تایمر بالا را هرگز cleanup/ری‌استارت نکند، فقط
+  // یک fetch یک‌باره‌ی اضافه انجام می‌دهد.
+  const isFirstPathnameRun = useRef(true);
+  useEffect(() => {
+    if (isFirstPathnameRun.current) {
+      isFirstPathnameRun.current = false;
+      return; // از یک fetch تکراری در همون mount اول (که effect بالا قبلاً انجام داده) جلوگیری می‌کند
     }
-  }, [loadChats, isLoaded, isSignedIn, pathname]);
+    if (!isLoaded || !isSignedIn) return;
+    loadChatsRef.current();
+  }, [pathname, isLoaded, isSignedIn]);
   // ------------------------------------------------------------------
 
   const filtered = chats.filter((c) =>
