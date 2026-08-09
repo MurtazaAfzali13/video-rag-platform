@@ -10,12 +10,19 @@ from typing import Any, Optional
 import httpx
 
 from app.config import get_settings
+from app.graph.retry_utils import call_with_retry, HTTP_RETRYABLE_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
 
+# Connect timeout kept short on purpose: if the TLS handshake to Supabase can't
+# complete in ~8s, something is actively wrong (VPN/proxy/AV interception,
+# Supabase cold-start, DNS issue) and we want to fail FAST and retry, instead
+# of hanging for the old flat 30s on every single attempt.
+_TIMEOUT = httpx.Timeout(connect=8.0, read=20.0, write=10.0, pool=5.0)
+
 
 class ChatStoreError(Exception):
-    """Raised when Supabase chat operations fail."""
+    """Raised when Supabase chat operations fail (HTTP error status OR network failure)."""
 
 
 def _headers(service_key: str) -> dict[str, str]:
@@ -40,6 +47,37 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> httpx.Response:
+    """Single choke point for every Supabase HTTP call.
+
+    Wraps the call with exponential-backoff retry (via retry_utils) for
+    connection-level failures (TLS handshake timeout, DNS, connection reset,
+    etc.). If retries are exhausted, raises ChatStoreError explicitly instead
+    of letting a raw httpx exception escape — this is what makes the existing
+    `except ChatStoreError -> HTTP 503` handling in the routers actually work
+    for network failures, not just for Supabase 4xx/5xx responses.
+    """
+
+    def _do_call() -> httpx.Response:
+        return getattr(client, method)(url, **kwargs)
+
+    try:
+        return call_with_retry(
+            _do_call,
+            max_attempts=3,
+            min_wait=1.0,
+            max_wait=8.0,
+            exceptions=HTTP_RETRYABLE_EXCEPTIONS,
+        )
+    except HTTP_RETRYABLE_EXCEPTIONS as exc:
+        logger.error("Supabase %s %s failed after retries: %s", method.upper(), url, exc)
+        raise ChatStoreError(
+            "امکان برقراری ارتباط با پایگاه‌داده (Supabase) وجود ندارد. "
+            "لطفاً اتصال اینترنت/VPN/فایروال را بررسی کنید و دوباره تلاش کنید. "
+            f"جزئیات فنی: {exc}"
+        ) from exc
+
+
 def _ensure_video_exists(video_id: str, user_id: str) -> None:
     """
     بررسی می‌کند که آیا ویدیو در جدول videos وجود دارد یا خیر.
@@ -47,22 +85,22 @@ def _ensure_video_exists(video_id: str, user_id: str) -> None:
     """
     url = f"{_base_url()}/rest/v1/videos"
     headers = _headers(get_settings().supabase_service_role_key)
-    
-    with httpx.Client(timeout=10.0) as client:
-        # ۱. بررسی وجود ویدیو با استفاده از نام صحیح ستون کلید اصلی یعنی id
-        check_res = client.get(url, headers=headers, params={"id": f"eq.{video_id}", "select": "id"})
+
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        check_res = _request(
+            client, "get", url, headers=headers, params={"id": f"eq.{video_id}", "select": "id"}
+        )
         if check_res.status_code == 200 and check_res.json():
             return  # ویدیو وجود دارد، نیازی به کار اضافه نیست
-            
-        # ۲. ایجاد رکورد موقت با رعایت ستون‌های اجباری id و user_id
+
         logger.warning("Video %s not found in 'videos' table. Creating a placeholder to prevent FK error.", video_id)
         placeholder = {
             "id": video_id,
             "user_id": user_id,
             "title": "Processing Video...",
-            "created_at": _now_iso()
+            "created_at": _now_iso(),
         }
-        upsert_res = client.post(url, headers=headers, json=placeholder)
+        upsert_res = _request(client, "post", url, headers=headers, json=placeholder)
         if upsert_res.status_code >= 400:
             logger.error("Failed to ensure/create video placeholder: %s", upsert_res.text)
             raise ChatStoreError(f"امکان ثبت ویدیو در دیتابیس وجود ندارد: {upsert_res.text}")
@@ -73,8 +111,8 @@ def _exact_count(table: str, params: dict[str, str]) -> int:
     headers = _headers(get_settings().supabase_service_role_key)
     headers["Prefer"] = "count=exact"
 
-    with httpx.Client(timeout=15.0) as client:
-        response = client.head(f"{_base_url()}/rest/v1/{table}", headers=headers, params=params)
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(client, "head", f"{_base_url()}/rest/v1/{table}", headers=headers, params=params)
 
     if response.status_code >= 400:
         logger.error("Failed to count rows in %s: %s %s", table, response.status_code, response.text)
@@ -117,7 +155,7 @@ def create_chat(
     video_id: Optional[str] = None,
 ) -> dict[str, Any]:
     chat_id = str(uuid.uuid4())
-    
+
     if video_id:
         _ensure_video_exists(video_id, user_id)
 
@@ -129,8 +167,10 @@ def create_chat(
         "created_at": _now_iso(),
     }
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.post(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "post",
             f"{_base_url()}/rest/v1/chats",
             headers=_headers(get_settings().supabase_service_role_key),
             json=payload,
@@ -146,8 +186,10 @@ def create_chat(
 
 def get_chat(chat_id: str, user_id: str) -> Optional[dict[str, Any]]:
     """Get a single chat by ID and user_id."""
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "get",
             f"{_base_url()}/rest/v1/chats",
             headers=_headers(get_settings().supabase_service_role_key),
             params={
@@ -167,8 +209,10 @@ def get_chat(chat_id: str, user_id: str) -> Optional[dict[str, Any]]:
 
 def list_chats(user_id: str, *, limit: int = 50) -> list[dict[str, Any]]:
     """List all chats for a user."""
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "get",
             f"{_base_url()}/rest/v1/chats",
             headers=_headers(get_settings().supabase_service_role_key),
             params={
@@ -200,8 +244,10 @@ def save_message(
         "created_at": _now_iso(),
     }
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.post(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "post",
             f"{_base_url()}/rest/v1/messages",
             headers=_headers(get_settings().supabase_service_role_key),
             json=payload,
@@ -217,8 +263,10 @@ def save_message(
 
 def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
     """List all messages for a chat."""
-    with httpx.Client(timeout=30.0) as client:
-        response = client.get(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "get",
             f"{_base_url()}/rest/v1/messages",
             headers=_headers(get_settings().supabase_service_role_key),
             params={
@@ -245,11 +293,11 @@ def derive_chat_title(query: str) -> str:
 
 def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Chat") -> dict[str, Any]:
     target_id = chat_id if chat_id else str(uuid.uuid4())
-    
+
     existing = get_chat(target_id, user_id)
     if existing:
         return existing
-    
+
     payload = {
         "id": target_id,
         "user_id": user_id,
@@ -258,8 +306,10 @@ def init_chat(user_id: str, chat_id: Optional[str] = None, title: str = "New Cha
         "created_at": _now_iso(),
     }
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.post(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "post",
             f"{_base_url()}/rest/v1/chats",
             headers=_headers(get_settings().supabase_service_role_key),
             json=payload,
@@ -279,8 +329,10 @@ def update_chat_video_id(chat_id: str, user_id: str, video_id: str) -> dict[str,
     """Update the video_id associated with a chat."""
     _ensure_video_exists(video_id, user_id)
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.patch(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "patch",
             f"{_base_url()}/rest/v1/chats",
             headers=_headers(get_settings().supabase_service_role_key),
             params={
@@ -315,16 +367,24 @@ def update_chat_timeline(
     if not payload:
         return {"id": chat_id}
 
-    with httpx.Client(timeout=30.0) as client:
-        response = client.patch(
-            f"{_base_url()}/rest/v1/chats",
-            headers=_headers(get_settings().supabase_service_role_key),
-            params={
-                "id": f"eq.{chat_id}",
-                "user_id": f"eq.{user_id}",
-            },
-            json=payload,
-        )
+    try:
+        with httpx.Client(timeout=_TIMEOUT) as client:
+            response = _request(
+                client,
+                "patch",
+                f"{_base_url()}/rest/v1/chats",
+                headers=_headers(get_settings().supabase_service_role_key),
+                params={
+                    "id": f"eq.{chat_id}",
+                    "user_id": f"eq.{user_id}",
+                },
+                json=payload,
+            )
+    except ChatStoreError as exc:
+        # This field is best-effort (frontend has a client-side fallback), so a
+        # network failure here should never take down video processing overall.
+        logger.warning("Failed to persist chat timeline for chat %s (network): %s", chat_id, exc)
+        return {"id": chat_id, **payload}
 
     if response.status_code >= 400:
         logger.error("Failed to persist chat timeline for chat %s: %s", chat_id, response.text)
@@ -336,8 +396,10 @@ def update_chat_timeline(
 
 def update_chat_title(chat_id: str, user_id: str, title: str) -> dict[str, Any]:
     """Update the title of a chat."""
-    with httpx.Client(timeout=30.0) as client:
-        response = client.patch(
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "patch",
             f"{_base_url()}/rest/v1/chats",
             headers=_headers(get_settings().supabase_service_role_key),
             params={
