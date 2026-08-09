@@ -67,10 +67,7 @@ export function WorkflowDistributionCard() {
   const { workflowDistribution, workflowTimeframe, isLoading, error } = state;
 
   const displayDistribution = useMemo(() => {
-    // 🔑 defaultWorkflowDistribution اینجا فقط به‌عنوان "بلوپرینت" متادیتا استفاده
-    // می‌شه (برای گرفتن label و color هر گره) — هرگز به‌عنوان fallback عددی.
-    // اگه API برای یک گره دیتا نداشته باشه (مثلاً کاربر جدید با آرایه‌ی خالی []),
-    // همون گره با value: 0 و percentage: 0 نمایش داده می‌شه، نه با عدد mock.
+  
     const coreNodes = CORE_NODE_IDS.map((nodeId) => {
       const blueprint = defaultWorkflowDistribution.find((d) => d.id === nodeId)!;
       const fromApi = workflowDistribution.find((d) => d.id === nodeId);

@@ -66,8 +66,6 @@ def create_validator_chain() -> Any:
 
 
 def create_generator_chain() -> Any:
-    """Create chain for grounded answer generation with structured output."""
-    # متغیر transparency_note اضافه شده تا به صورت داینامیک از گره تزریق شود
     system_prompt = (
         "You are an expert educational assistant.\n"
         "{transparency_note}\n"
@@ -76,7 +74,12 @@ def create_generator_chain() -> Any:
         "1. Do not use outside knowledge.\n"
         "2. Write the main response in the 'answer' field using markdown.\n"
         "3. For video sources, cite them inline using [MM:SS] format inside the 'answer' field.\n"
-        "4. For web sources, extract their URL and Title and put them in the 'web_sources' list array. Do NOT paste raw URLs in the text.\n"
+        "4. In the 'sources' list, for EVERY distinct video timestamp you cited, add one entry with:\n"
+        "   - source_type='video', start_time (in seconds, matching the [MM:SS] you cited),\n"
+        "   - title: a short (3-7 word) chapter-style topic heading describing what is discussed "
+        "at that exact timestamp (e.g. 'Setting up the Environment'), NOT the user's question,\n"
+        "   - description: one concise sentence about that segment.\n"
+        "5. For web sources, add an entry with source_type='web', url, and title. Do NOT paste raw URLs in the 'answer' text.\n"
         "Context:\n{context}"
     )
     
@@ -86,7 +89,6 @@ def create_generator_chain() -> Any:
     ])
     
     settings = get_settings()
-    # استفاده از FinalAnswerSchema برای یکپارچگی با State
     return prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
 
 

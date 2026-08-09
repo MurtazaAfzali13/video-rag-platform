@@ -7,13 +7,14 @@ from pydantic import BaseModel, Field
 from youtube_transcript_api._errors import YouTubeTranscriptApiException
 
 from app.config import get_settings
-from app.ingestion import process_and_ingest_video,format_segments_for_llm
+from app.ingestion import process_and_ingest_video, format_segments_for_llm
 from app.youtube_client import (
     extract_video_id,
     fetch_transcript,
     is_invalid_video_id,
     is_transcript_blocked,
     is_transcript_not_found,
+    fetch_video_title,  # 🆕 ایمپورت تابع دریافت عنوان ویدیو
 )
 from app.chat_store import (
     ChatStoreError,
@@ -67,7 +68,6 @@ async def process_video(
     user_id = auth.user_id
     settings = get_settings()
 
-   
     if not auth.is_admin:
         video_count = await asyncio.to_thread(get_user_video_count, user_id)
         if video_count >= 1:
@@ -87,6 +87,9 @@ async def process_video(
         )
 
     try:
+        # 🆕 دریافت عنوان واقعی ویدیو
+        video_title = await fetch_video_title(video_id)
+
         my_proxies = None
         if hasattr(settings, 'proxy_url') and settings.proxy_url:
             my_proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
@@ -96,11 +99,13 @@ async def process_video(
         else:
             transcript = await asyncio.to_thread(fetch_transcript, video_id)
         
+        # 🆕 تزریق عنوان واقعی ویدیو به تابع پردازش و اینجکشن دیتابیس
         chunks_processed = await asyncio.to_thread(
             process_and_ingest_video,
             transcript,
             video_id,
-            user_id, 
+            user_id,
+            video_title, 
         )
         
         target_chat_id = request.chat_id
@@ -131,7 +136,6 @@ async def process_video(
                     "text": line.get("text", "")
                 })
 
-      
         timeline_items: List[Dict[str, Any]] = []
         try:
             segments_text = format_segments_for_llm(transcript)
@@ -151,7 +155,6 @@ async def process_video(
             logger.warning("Chapter extraction failed for video %s: %s", video_id, exc)
             timeline_items = []
 
-  
         try:
             await asyncio.to_thread(
                 update_chat_timeline,
@@ -187,7 +190,7 @@ async def process_video(
         chat_id=target_chat_id,
         chunks_processed=chunks_processed,
         message="ویدیو با موفقیت پردازش و به چت متصل شد.",
-        title=f"YouTube Video — {video_id}",
+        title=video_title, # 🆕 در اینجا عنوان واقعی به جای متن فیک ارسال می‌شود
         timeline_items=timeline_items,  # سرفصل‌های واقعی تولیدشده از ترنسکریپت (یا [] در صورت شکست)
         transcript_lines=formatted_transcript
     )

@@ -205,17 +205,16 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
     return {"documents": web_results, "web_search_time_ms": elapsed_ms}
 
 
+
 def generate_answer_node(state: AgentState) -> dict[str, Any]:
-    """Synthesize the final grounded response with structured sources for UI rendering."""
     logger.info("Entering Generator Node...")
     start_time = time.time()
     query = state["query"]
     documents = state.get("documents", [])
-    
+
     context_parts = []
     is_web_search = False
-    
-    # ۱. ساخت متن کانتکست برای مدل
+
     for doc in documents:
         if doc.get("source_type") == "web":
             is_web_search = True
@@ -228,60 +227,71 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
             context_parts.append(
                 f"ویدیو: {v_title} (ID: {v_id}) - زمان [{minutes:02d}:{seconds:02d}]:\n{doc['page_content']}"
             )
-            
+
     context_text = "\n\n".join(context_parts)
-    
+
     transparency_note = ""
     if is_web_search:
         transparency_note = (
             "توجه مهم: اطلاعات در ویدیو یافت نشد. این پاسخ بر اساس 'جستجوی وب' است. این موضوع را حتما به کاربر بگو.\n\n"
         )
-    
-    generator_chain = create_generator_chain()
-    
-    result: FinalAnswerSchema = generator_chain.invoke({
-        "query": query, 
-        "context": context_text,
-        "transparency_note": transparency_note
-    })
-    
-    # ۲. جمع‌آوری منابع (حل ارور web_sources)
-    ui_sources = []
-    
-    # اولویت با منابعی است که LLM تولید کرده (چون title و description جذاب دارند)
-    if result.sources:
-        for src in result.sources:
-            ui_sources.append(src.model_dump(exclude_none=True))
-            
-    # فال‌بک: اگر LLM منبعی تولید نکرد اما داکیومنت داشتیم، دستی اضافه می‌کنیم 
-    # تا پنل فرانت‌اند خالی نماند!
-    if not ui_sources and documents:
-        seen_timestamps = set()
-        for doc in documents:
-            if doc.get("source_type") == "video":
-                st = doc.get("start_time")
-                if st not in seen_timestamps:
-                    seen_timestamps.add(st)
-                    ui_sources.append({
-                        "source_type": "video",
-                        "title": doc.get("title", "ارجاع به ویدیو"),
-                        "start_time": st
-                    })
-            elif doc.get("source_type") == "web":
-                ui_sources.append({
-                    "source_type": "web",
-                    "title": doc.get("title", "منبع وب"),
-                    "url": doc.get("video_id") # در سرچ وب، آدرس url درون فیلد video_id ذخیره شده است
-                })
 
-    # ۳. بسته‌بندی نهایی خروجی به صورت JSON
+    generator_chain = create_generator_chain()
+    result: FinalAnswerSchema = generator_chain.invoke({
+        "query": query,
+        "context": context_text,
+        "transparency_note": transparency_note,
+    })
+
+    # --- ساخت منابع: هرگز به فیلدهای ساختاری (video_id/start_time/url) که مدل
+    # تولید کرده اعتماد نمی‌کنیم؛ فقط title/description خلاقانه‌ی مدل را (اگر با
+    # همان ترتیب/زمان مطابقت داشت) استفاده می‌کنیم. بقیه مستقیم از documents می‌آید.
+    llm_titles_by_time: dict[Any, tuple[str, str]] = {}
+    for src in (result.sources or []):
+        if src.source_type == "video" and src.start_time is not None:
+            llm_titles_by_time[src.start_time] = (src.title or "", src.description or "")
+
+    ui_sources = []
+    seen_video_keys = set()
+    for doc in documents:
+        if doc.get("source_type") == "video":
+            v_id = doc.get("video_id", "Unknown")
+            st = int(doc.get("start_time", 0) or 0)
+            key = (v_id, st)
+            if key in seen_video_keys:
+                continue
+            seen_video_keys.add(key)
+
+            llm_title, llm_desc = llm_titles_by_time.get(st, ("", ""))
+            title = llm_title or doc.get("title") or "ارجاع به ویدیو"
+            description = llm_desc or (doc.get("page_content", "")[:120].strip() + "…")
+
+            ui_sources.append({
+                "source_type": "video",
+                "video_id": v_id,
+                "start_time": st,
+                "title": title,
+                "description": description,
+            })
+        elif doc.get("source_type") == "web":
+            web_url = doc.get("video_id")  # در نود وب، آدرس داخل video_id ذخیره شده
+            web_title = next(
+                (s.title for s in (result.sources or []) if s.source_type == "web" and s.url == web_url),
+                None,
+            )
+            ui_sources.append({
+                "source_type": "web",
+                "url": web_url,
+                "title": web_title or doc.get("title", "منبع وب"),
+            })
+
     response_payload = {
         "type": "qa_response",
         "answer": result.answer,
-        "sources": ui_sources
+        "sources": ui_sources,
     }
-        
-    elapsed_ms = int((time.time() - start_time) * 1000) 
+
+    elapsed_ms = int((time.time() - start_time) * 1000)
     return {"response": json.dumps(response_payload, ensure_ascii=False), "generator_time_ms": elapsed_ms}
 
 
