@@ -1,9 +1,4 @@
-"""FastAPI router for the Monitoring dashboard (backend-only, brand-new file).
 
-مسیر جدید و مستقل از dashboard.py — چون این صفحه (Monitoring / infra health)
-از نظر دامنه با صفحه‌ی Analytics فرق دارد و قراره در آینده System Status و
-AI Health Score هم به همین‌جا اضافه شوند.
-"""
 
 import asyncio
 from typing import List, Literal
@@ -11,7 +6,9 @@ from typing import List, Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.monitoring_store import get_response_time_metrics
+from typing import Optional
+
+from app.monitoring_store import get_response_time_metrics, get_ai_health_score
 from app.chat_store import ChatStoreError
 from app.auth import get_current_user_with_role, AuthenticatedUser
 
@@ -47,6 +44,47 @@ async def response_time_endpoint(
         raise HTTPException(
             status_code=503,
             detail="خطا در برقراری ارتباط با دیتابیس برای دریافت متریک زمان پاسخ.",
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+
+class HealthMetricSchema(BaseModel):
+    id: str
+    label: str
+    value: Optional[float] = None
+    change: Optional[float] = None
+    trend: Optional[Literal["up", "down"]] = None
+    tone: Literal["positive", "negative", "neutral"]
+    available: bool = True
+
+
+class AIHealthScoreSchema(BaseModel):
+    score: int
+    label: str
+    metrics: List[HealthMetricSchema]
+
+
+@router.get("/health-score", response_model=AIHealthScoreSchema)
+async def health_score_endpoint(
+    timeframe: Timeframe = Query("week", description="بازه‌ی زمانی: today | week | month | all"),
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
+):
+    """امتیاز سلامت پایپ‌لاین CRAG (Retrieval/Validation/Retry/Error Success) در صفحه Monitoring.
+
+    ادمین: کل سیستم. کاربر معمولی: فقط traces مربوط به چت‌های خودش — این تفکیک
+    کاملاً روی سرور و بر اساس auth.is_admin (از JWT) اتفاق می‌افتد؛ فرانت‌اند
+    نیازی به منطق جدا برای ادمین/کاربر ندارد.
+    """
+    try:
+        score_data = await asyncio.to_thread(
+            get_ai_health_score, auth.user_id, auth.is_admin, timeframe
+        )
+        return score_data
+    except ChatStoreError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="خطا در برقراری ارتباط با دیتابیس برای دریافت امتیاز سلامت.",
         ) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
