@@ -3,13 +3,13 @@ import json
 import logging
 from typing import Optional
 
-# 🛡️ پوشش امنیتی: اضافه شدن Depends برای احراز هویت
 from fastapi import APIRouter, HTTPException, Query, Depends
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
 from app.graph.workflow import get_agent_graph
-from app.chat_store import(
+from app.chat_store import (
     ChatStoreError,
     get_chat,
     init_chat,
@@ -28,6 +28,8 @@ from app.auth import get_current_user, get_current_user_with_role, Authenticated
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Chat"])
+
+CHAT_HISTORY_TURNS = 2
 
 
 # --- Pydantic Schemas ---
@@ -58,16 +60,6 @@ class ChatSummary(BaseModel):
 
 
 class ChatDetail(ChatSummary):
-    """رکورد کامل یک چت، شامل تایم‌لاین/ترنسکریپت ذخیره‌شده‌ی ویدیو.
-
-    عمداً این را از ChatSummary جدا نگه داشتیم: GET /chats (لیست چت‌ها، احتمالاً
-    ده‌ها آیتم) نباید مجبور باشد دیتای سنگین timeline_items/transcript_lines هر
-    چت را حمل کند. این دیتا فقط وقتی یک چت خاص باز می‌شود (GET /chats/{chat_id})
-    لازم است — همان‌جایی که قبلاً به‌خاطر response_model=ChatSummary، این دو
-    فیلد بی‌صدا از JSON پاسخ حذف می‌شدند (حتی با اینکه در دیتابیس و در دیکشنری
-    خام get_chat() موجود بودند) و فرانت مجبور می‌شد fallback بزند.
-    """
-
     timeline_items: list[dict] = Field(default_factory=list)
     transcript_lines: list[dict] = Field(default_factory=list)
 
@@ -78,6 +70,133 @@ class MessageRecord(BaseModel):
     role: str
     content: str
     created_at: str
+
+
+# --- Helpers ---
+
+def _extract_display_text(raw_content: str) -> str:
+    """Assistant messages are stored as raw JSON payloads (qa_response /
+    video_summary). For chat_history we want the human-readable text only —
+    feeding raw JSON into the contextualize/generator prompts as "assistant
+    said: {...}" wastes tokens and confuses the LLM.
+    """
+    try:
+        parsed = json.loads(raw_content)
+    except (json.JSONDecodeError, TypeError):
+        return raw_content
+
+    if not isinstance(parsed, dict):
+        return raw_content
+
+    if parsed.get("type") == "qa_response":
+        return parsed.get("answer", raw_content)
+    if parsed.get("type") == "video_summary":
+        return parsed.get("overall_summary", raw_content)
+    return raw_content
+
+
+def _build_chat_history(messages: list[dict], *, max_turns: int = CHAT_HISTORY_TURNS) -> list[BaseMessage]:
+    """Convert Supabase message rows (oldest -> newest) into LangChain messages,
+    keeping only the last `max_turns` turns. THIS is what actually fixes the
+    memory bug: previously nothing from Supabase ever reached AgentState.
+    """
+    trimmed = messages[-(max_turns * 1):] if messages else []
+    history: list[BaseMessage] = []
+    for m in trimmed:
+        role = m.get("role")
+        content = m.get("content", "")
+        if role == "user":
+            history.append(HumanMessage(content=content))
+        elif role == "assistant":
+            history.append(AIMessage(content=_extract_display_text(content)))
+    return history
+
+
+async def _run_pipeline(
+    request: ChatRequest,
+    user_id: str,
+) -> tuple[str, dict]:
+    """Shared setup for both the regular and the SSE endpoint: fetches history,
+    persists the user message, and returns the fully-populated initial_state.
+    """
+    target_chat_id = request.chat_id
+
+    existing = await asyncio.to_thread(get_chat, target_chat_id, user_id)
+    if not existing:
+        await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
+
+    # Single fetch serves both is_first_interaction AND chat_history — avoids a
+    # second round-trip to Supabase (the old code queried with limit=1 just for
+    # the boolean check and threw the rows away).
+    existing_messages = await asyncio.to_thread(list_messages, target_chat_id, limit=200)
+    is_first_interaction = len(existing_messages) == 0
+    chat_history = _build_chat_history(existing_messages)
+
+    await asyncio.to_thread(
+        save_message,
+        chat_id=target_chat_id,
+        role="user",
+        content=request.query,
+    )
+
+    search_scope = "single_video" if request.video_id else "general"
+
+    initial_state = {
+        "messages": [HumanMessage(content=request.query)],
+        "query": request.query,
+        "standalone_query": None,
+        "chat_history": chat_history,
+        "user_id": user_id,
+        "video_id": request.video_id,
+        "search_scope": search_scope,
+        "next_node": None,
+        "documents": None,
+        "retrieved_video_ids": None,
+        "response": None,
+        "retriever_time_ms": 0,
+        "reranker_time_ms": 0,
+        "validator_time_ms": 0,
+        "generator_time_ms": 0,
+        "web_search_time_ms": 0,
+        "other_time_ms": 0,
+    }
+
+    return target_chat_id, {"initial_state": initial_state, "is_first_interaction": is_first_interaction}
+
+
+async def _persist_result(target_chat_id: str, user_id: str, request: ChatRequest, result: dict, is_first_interaction: bool) -> None:
+    workflow_type = "qa"
+    search_scope = "single_video" if request.video_id else "general"
+    if result.get("next_node") == "video_summary" or search_scope == "video_summary":
+        workflow_type = "video_summary"
+    elif search_scope == "general":
+        workflow_type = "general"
+
+    await asyncio.to_thread(
+        save_workflow_trace,
+        chat_id=target_chat_id,
+        workflow=workflow_type,
+        retriever_time_ms=int(result.get("retriever_time_ms") or 0),
+        validator_time_ms=int(result.get("validator_time_ms") or 0),
+        generator_time_ms=int(result.get("generator_time_ms") or 0),
+        web_search_time_ms=int(result.get("web_search_time_ms") or 0),
+        other_time_ms=int(result.get("other_time_ms") or 0),
+        success=bool(result.get("response")),
+    )
+
+    if is_first_interaction:
+        clean_text = request.query.strip()
+        new_title = clean_text[:35]
+        if len(clean_text) > 35:
+            new_title += "..."
+        await asyncio.to_thread(update_chat_title, target_chat_id, user_id, new_title)
+
+    await asyncio.to_thread(
+        save_message,
+        chat_id=target_chat_id,
+        role="assistant",
+        content=result["response"],
+    )
 
 
 # --- Endpoints ---
@@ -120,12 +239,7 @@ async def update_chat_metadata(
             raise HTTPException(status_code=404, detail="Chat not found.")
 
         if request.video_id is not None:
-            await asyncio.to_thread(
-                update_chat_video_id,
-                chat_id,
-                user_id,
-                request.video_id,
-            )
+            await asyncio.to_thread(update_chat_video_id, chat_id, user_id, request.video_id)
 
         updated = await asyncio.to_thread(get_chat, chat_id, user_id)
         if not updated:
@@ -159,9 +273,6 @@ async def chat_endpoint(
 ) -> ChatResponse:
     user_id = auth.user_id
     try:
-        # --- 🚦 RBAC / Quota: کاربر Admin نامحدود است، کاربر Free حداکثر ۲ پیام ---
-        # این چک عمداً قبل از ذخیره‌ی پیام کاربر و اجرای گراف LangGraph قرار گرفته: اگر کاربر
-        # به سقف رسیده، نه پیام سومش ذخیره می‌شود و نه هزینه‌ی اجرای مدل صرف می‌شود.
         if not auth.is_admin:
             message_count = await asyncio.to_thread(get_user_message_count, user_id)
             if message_count >= 2:
@@ -173,100 +284,29 @@ async def chat_endpoint(
                     ),
                 )
 
-        target_chat_id = request.chat_id
-        
-        existing = await asyncio.to_thread(get_chat, target_chat_id, user_id)
-        if not existing:
-            await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
+        target_chat_id, ctx = await _run_pipeline(request, user_id)
+        initial_state = ctx["initial_state"]
+        is_first_interaction = ctx["is_first_interaction"]
 
-        existing_messages = await asyncio.to_thread(list_messages, target_chat_id, limit=1)
-        is_first_interaction = len(existing_messages) == 0
-
-        await asyncio.to_thread(
-            save_message,
-            chat_id=target_chat_id,
-            role="user",
-            content=request.query,
-        )
-
-        search_scope = "single_video" if request.video_id else "general"
-
-        initial_state = {
-            "messages": [HumanMessage(content=request.query)],
-            "query": request.query,
-            "user_id": user_id,
-            "video_id": request.video_id,
-            "search_scope": search_scope,
-            "next_node": None,
-            "documents": None,
-            "response": None,
-            "retriever_time_ms": 0,
-            "validator_time_ms": 0,
-            "generator_time_ms": 0,
-            "web_search_time_ms": 0,
-            "other_time_ms": 0,
-        }
-
-        # اجرای گراف
         result = await get_agent_graph().ainvoke(initial_state)
-        
+
         logger.info("=== LANGGRAPH FINAL OUTPUT STATE ===")
         logger.info(f"Next Node: {result.get('next_node')}")
+        logger.info(f"Standalone Query: {result.get('standalone_query')}")
+        logger.info(f"Retrieved Video IDs: {result.get('retrieved_video_ids')}")
         logger.info(f"Retriever Time: {result.get('retriever_time_ms')} ms")
+        logger.info(f"Reranker Time: {result.get('reranker_time_ms')} ms")
         logger.info(f"Validator Time: {result.get('validator_time_ms')} ms")
         logger.info(f"Generator Time: {result.get('generator_time_ms')} ms")
         logger.info(f"Web Search Time: {result.get('web_search_time_ms')} ms")
-        logger.info(f"Other Time: {result.get('other_time_ms')} ms")
         logger.info("====================================")
-
-        # --- ذخیره اطلاعات گراف (Traces) در دیتابیس ---
-        workflow_type = "qa"
-        if result.get("next_node") == "video_summary" or search_scope == "video_summary":
-            workflow_type = "video_summary"
-        elif search_scope == "general":
-            workflow_type = "general"
-
-        await asyncio.to_thread(
-            save_workflow_trace,
-            chat_id=target_chat_id,
-            workflow=workflow_type,
-            retriever_time_ms=int(result.get("retriever_time_ms") or 0),
-            validator_time_ms=int(result.get("validator_time_ms") or 0),
-            generator_time_ms=int(result.get("generator_time_ms") or 0),
-            web_search_time_ms=int(result.get("web_search_time_ms") or 0),
-            other_time_ms=int(result.get("other_time_ms") or 0),
-            success=bool(result.get("response"))
-        )
-        # ---------------------------------------------
 
         if not result or "response" not in result or not result["response"]:
             raise HTTPException(status_code=500, detail="پاسخی از مدل دریافت نشد.")
 
-        assistant_response = result["response"]
+        await _persist_result(target_chat_id, user_id, request, result, is_first_interaction)
 
-        if is_first_interaction:
-            clean_text = request.query.strip()
-            
-            new_title = clean_text[:35]
-            if len(clean_text) > 35:
-                new_title += "..."
-                
-            await asyncio.to_thread(
-                update_chat_title,
-                target_chat_id,
-                user_id,
-                new_title,
-            )
-        # --- پایان بخش اصلاح شده ---
-
-        await asyncio.to_thread(
-            save_message,
-            chat_id=target_chat_id,
-            role="assistant",
-            content=assistant_response,
-        )
-
-        return ChatResponse(response=assistant_response, chat_id=target_chat_id)
+        return ChatResponse(response=result["response"], chat_id=target_chat_id)
 
     except HTTPException:
         raise
@@ -274,11 +314,92 @@ async def chat_endpoint(
         logger.exception("Chat persistence error for user %s", user_id)
         raise HTTPException(status_code=503, detail=f"خطا در ذخیره‌سازی پیام: {str(exc)}") from exc
     except Exception as exc:
-        logger.exception(
-            "Error occurred during LangGraph workflow execution for user %s",
-            user_id,
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"خطای سرور در جریان هوش مصنوعی: {str(exc)}",
-        ) from exc
+        logger.exception("Error occurred during LangGraph workflow execution for user %s", user_id)
+        raise HTTPException(status_code=500, detail=f"خطای سرور در جریان هوش مصنوعی: {str(exc)}") from exc
+
+
+# ============================================================================
+# 6) SSE Streaming endpoint (bonus)
+# ============================================================================
+#
+# Structured output (`with_structured_output`) does not stream token-by-token
+# in a UI-friendly way across all OpenRouter models — partial JSON isn't safe
+# to render as it arrives. Instead we stream at NODE granularity using
+# `astream_events`, giving the frontend a real-time "retrieving -> reranking ->
+# validating -> generating" progress experience, then push the final structured
+# payload as one last SSE event. This is the safe, model-agnostic approach.
+#
+# For providers/models that DO support incremental function-calling deltas,
+# you can additionally forward `on_chat_model_stream` events for the generator
+# node specifically to get a true typing effect on the `answer` field.
+
+NODE_LABELS_FA = {
+    "contextualize": "در حال بازخوانی مکالمه…",
+    "supervisor": "در حال تحلیل درخواست…",
+    "retriever": "در حال جست‌وجو در ترنسکریپت…",
+    "reranker": "در حال رتبه‌بندی نتایج…",
+    "validator": "در حال بررسی کفایت اطلاعات…",
+    "web_search": "در حال جست‌وجوی وب…",
+    "generator": "در حال تولید پاسخ…",
+    "video_summary": "در حال تهیه خلاصه…",
+}
+
+
+@router.post("/chat/stream")
+async def chat_stream_endpoint(
+    request: ChatRequest,
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
+):
+    user_id = auth.user_id
+
+    if not auth.is_admin:
+        message_count = await asyncio.to_thread(get_user_message_count, user_id)
+        if message_count >= 2:
+            raise HTTPException(status_code=403, detail="پیام رایگان شما تمام شده است.")
+
+    target_chat_id, ctx = await _run_pipeline(request, user_id)
+    initial_state = ctx["initial_state"]
+    is_first_interaction = ctx["is_first_interaction"]
+
+    async def event_generator():
+        graph = get_agent_graph()
+        final_result: dict = {}
+
+        def sse(event: str, data: dict) -> str:
+            return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+        try:
+            async for event in graph.astream_events(initial_state, version="v2"):
+                kind = event.get("event")
+
+                if kind == "on_chain_start" and event.get("name") in NODE_LABELS_FA:
+                    node_name = event["name"]
+                    yield sse("progress", {"node": node_name, "label": NODE_LABELS_FA[node_name]})
+
+                elif kind == "on_chain_end" and event.get("name") == "LangGraph":
+                    final_result = event["data"].get("output", {}) or {}
+
+            if not final_result.get("response"):
+                yield sse("error", {"detail": "پاسخی از مدل دریافت نشد."})
+                return
+
+            await _persist_result(target_chat_id, user_id, request, final_result, is_first_interaction)
+
+            yield sse(
+                "final",
+                {"response": final_result["response"], "chat_id": target_chat_id},
+            )
+
+        except Exception as exc:
+            logger.exception("SSE stream failed for chat %s", target_chat_id)
+            yield sse("error", {"detail": str(exc)})
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",  # disable nginx buffering for real streaming
+            "Connection": "keep-alive",
+        },
+    )

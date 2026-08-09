@@ -9,23 +9,39 @@ from langchain_community.tools.tavily_search import TavilySearchResults
 
 from app.config import get_settings
 from app.graph.state import (
-    AgentState, 
-    FinalAnswerSchema, 
-    VideoSummarySchema, 
-    RouteDecision, 
-    GradeDocuments
+    AgentState,
+    FinalAnswerSchema,
+    VideoSummarySchema,
+    RouteDecision,
+    GradeDocuments,
+    ContextualizedQuery,
+    RerankResult,
 )
 from app.ingestion import _get_embeddings
 
-# وارد کردن زنجیره‌ها از فایل chains.py
 from app.graph.chains import (
+    create_contextualize_chain,
     create_supervisor_chain,
     create_validator_chain,
     create_generator_chain,
-    create_summary_chain
+    create_summary_chain,
+    create_rerank_chain,
 )
+from app.graph.retry_utils import invoke_with_retry, call_with_retry, HTTP_RETRYABLE_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
+
+# How many prior turns (user+assistant pairs) the contextualizer is allowed to see.
+# Kept small on purpose: this call sits on the hot path of every single request.
+MAX_RERANK_TOP_N = 4
+
+
+def _resolved_query(state: AgentState) -> str:
+    """Every node downstream of contextualize_node MUST read the query through
+    this helper instead of `state["query"]` directly, so conversational memory
+    (pronoun resolution etc.) is actually applied everywhere.
+    """
+    return state.get("standalone_query") or state["query"]
 
 
 def _fetch_video_context(
@@ -65,21 +81,64 @@ def _fetch_video_context(
     return "\n\n".join(context_parts)
 
 
+# ============================================================================
+# 1) Contextualize / Rewrite Node — THE MEMORY BUG FIX
+# ============================================================================
+
+def contextualize_node(state: AgentState) -> dict[str, Any]:
+    """Entry point of the graph. Resolves the raw user query against chat_history
+    (injected by the /chat endpoint from Supabase) into a standalone question.
+
+    If chat_history is empty (first message in the chat), we skip the LLM call
+    entirely — no history means no ambiguity to resolve.
+    """
+    logger.info("Entering Contextualize Node...")
+    start = time.time()
+
+    query = state["query"]
+    chat_history = state.get("chat_history", [])
+
+    if not chat_history:
+        return {"standalone_query": query, "other_time_ms": state.get("other_time_ms", 0)}
+
+    chain = create_contextualize_chain()
+    try:
+        result: ContextualizedQuery = invoke_with_retry(
+            chain, {"chat_history": chat_history, "query": query}
+        )
+        logger.info(
+            "Contextualize: follow_up=%s | raw=%r -> standalone=%r",
+            result.is_follow_up,
+            query,
+            result.standalone_query,
+        )
+        standalone = result.standalone_query or query
+    except Exception as exc:
+        # Fail open: never block the whole pipeline because the rewriter failed.
+        # Worst case we fall back to pre-fix behavior (raw query) for this turn only.
+        logger.warning("Contextualize chain failed after retries, falling back to raw query: %s", exc)
+        standalone = query
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    return {
+        "standalone_query": standalone,
+        "other_time_ms": state.get("other_time_ms", 0) + elapsed_ms,
+    }
+
+
 def supervisor_node(state: AgentState) -> dict[str, Any]:
     """Analyze the user's query and UI context to determine the next expert node."""
     logger.info("Entering Supervisor Agent...")
-    
-    query = state["query"]
+
+    query = _resolved_query(state)
     search_scope = state.get("search_scope", "single_video")
-    
-    # استفاده از Chain متمرکز
+
     router_chain = create_supervisor_chain()
-    
-    decision: RouteDecision = router_chain.invoke({
-        "query": query, 
-        "search_scope": search_scope
-    }) 
-    
+
+    decision: RouteDecision = invoke_with_retry(
+        router_chain, {"query": query, "search_scope": search_scope}
+    )
+
     logger.info(f"Supervisor Decision: {decision.intent} | Reason: {decision.reasoning}")
     return {"next_node": decision.intent}
 
@@ -90,9 +149,9 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
     start_time = time.time()
     user_id = state["user_id"]
     video_id = state["video_id"]
-    query = state["query"]
+    query = _resolved_query(state)
     search_scope = state.get("search_scope", "single_video")
-    
+
     settings = get_settings()
     vector_store = PineconeVectorStore(
         index_name=settings.index_name,
@@ -100,61 +159,147 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
         pinecone_api_key=settings.pinecone_api_key,
         namespace=user_id,
     )
-    
+
     if search_scope == "single_video" and video_id:
         logger.info(f"Searching strictly inside video: {video_id}")
-        search_kwargs = {
-            "filter": {"video_id": {"$eq": video_id}},
-            "k": 4
-        }
+        search_kwargs = {"filter": {"video_id": {"$eq": video_id}}, "k": 4}
     else:
+        # Multi-video scope: pull a wider candidate pool (k=8) since reranker_node
+        # will immediately trim this down to MAX_RERANK_TOP_N high-quality chunks.
         logger.info("Searching across ALL user videos (General Scope)")
-        search_kwargs = {"k": 5}
-        
+        search_kwargs = {"k": 8}
+
     retriever = vector_store.as_retriever(search_kwargs=search_kwargs)
     docs = retriever.invoke(query)
-    
+
     retrieved_docs = []
     for doc in docs:
-        retrieved_docs.append({
-            "page_content": doc.page_content,
-            "video_id": doc.metadata.get("video_id", "Unknown"),
-            "title": doc.metadata.get("title") or doc.metadata.get("video_title") or "Unknown Title",
-            "start_time": doc.metadata.get("start_time", 0),
-            "source_type": "video"
-        })
-    
-    elapsed_ms = int((time.time() - start_time) * 1000) 
+        retrieved_docs.append(
+            {
+                "page_content": doc.page_content,
+                "video_id": doc.metadata.get("video_id", "Unknown"),
+                "title": doc.metadata.get("title") or doc.metadata.get("video_title") or "Unknown Title",
+                "start_time": doc.metadata.get("start_time", 0),
+                "source_type": "video",
+            }
+        )
+
+    elapsed_ms = int((time.time() - start_time) * 1000)
     return {"documents": retrieved_docs, "retriever_time_ms": elapsed_ms}
+
+
+# ============================================================================
+# 2) Reranker Node — cross-encoder (preferred) with LLM fallback
+# ============================================================================
+
+_cross_encoder = None
+_cross_encoder_load_failed = False
+
+
+def _get_cross_encoder():
+    """Lazily load a lightweight local cross-encoder. Returns None if the
+    `sentence-transformers` package isn't installed, so reranker_node can fall
+    back to the LLM-based reranker without crashing the pipeline.
+    """
+    global _cross_encoder, _cross_encoder_load_failed
+    if _cross_encoder is not None or _cross_encoder_load_failed:
+        return _cross_encoder
+    try:
+        from sentence_transformers import CrossEncoder
+
+        _cross_encoder = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+        logger.info("Reranker: loaded local cross-encoder ms-marco-MiniLM-L-6-v2")
+    except Exception as exc:
+        logger.warning(
+            "Reranker: sentence-transformers cross-encoder unavailable (%s). "
+            "Falling back to LLM-based reranking.",
+            exc,
+        )
+        _cross_encoder_load_failed = True
+        _cross_encoder = None
+    return _cross_encoder
+
+
+def _rerank_with_llm(query: str, documents: list[dict]) -> list[float]:
+    numbered_chunks = "\n\n".join(
+        f"[{i}] {d['page_content']}" for i, d in enumerate(documents)
+    )
+    chain = create_rerank_chain()
+    result: RerankResult = invoke_with_retry(
+        chain, {"query": query, "numbered_chunks": numbered_chunks}
+    )
+    scores = [0.0] * len(documents)
+    for item in result.ranked:
+        if 0 <= item.index < len(documents):
+            scores[item.index] = item.relevance_score
+    return scores
+
+
+def reranker_node(state: AgentState, *, top_n: int = MAX_RERANK_TOP_N) -> dict[str, Any]:
+    """Filters noise out of the k=5..8 candidate pool from retriever_node before
+    validation. Runs BEFORE validator so the validator's binary relevance check
+    only ever sees the strongest candidates, reducing false 'no' -> unnecessary
+    web_search fallbacks.
+    """
+    logger.info("Entering Reranker Node...")
+    start = time.time()
+
+    query = _resolved_query(state)
+    documents = state.get("documents") or []
+
+    if not documents:
+        return {"documents": [], "reranker_time_ms": 0, "retrieved_video_ids": []}
+
+    encoder = _get_cross_encoder()
+    try:
+        if encoder is not None:
+            pairs = [(query, d["page_content"]) for d in documents]
+            scores = encoder.predict(pairs).tolist()
+        else:
+            scores = _rerank_with_llm(query, documents)
+    except Exception as exc:
+        logger.warning("Reranker failed (%s); keeping original retrieval order.", exc)
+        scores = [1.0] * len(documents)  # neutral: don't reorder/drop on failure
+
+    scored = sorted(zip(documents, scores), key=lambda pair: pair[1], reverse=True)
+    top_docs = [doc for doc, _score in scored[:top_n]]
+
+    video_ids = sorted(
+        {d["video_id"] for d in top_docs if d.get("source_type") == "video" and d.get("video_id")}
+    )
+
+    elapsed_ms = int((time.time() - start) * 1000)
+    logger.info(
+        "Reranker: kept top %d/%d chunks | video_ids=%s",
+        len(top_docs),
+        len(documents),
+        video_ids,
+    )
+    return {"documents": top_docs, "reranker_time_ms": elapsed_ms, "retrieved_video_ids": video_ids}
 
 
 def validator_node(state: AgentState) -> dict[str, Any]:
     """Strictly grade the relevance of retrieved documents to prevent hallucination."""
     logger.info("Entering Validator Node...")
     start_time = time.time()
-    query = state["query"]
+    query = _resolved_query(state)
     documents = state.get("documents", [])
-    
+
     if not documents:
         logger.warning("No documents found in state. Routing to web_search.")
         return {"next_node": "web_search"}
-        
+
     context_text = "\n\n".join([f"Content: {d['page_content']}" for d in documents])
-    
-    # استفاده از Chain متمرکز
+
     grader_chain = create_validator_chain()
-    
-    result: GradeDocuments = grader_chain.invoke({
-        "query": query, 
-        "context": context_text
-    })
-    
+    result: GradeDocuments = invoke_with_retry(grader_chain, {"query": query, "context": context_text})
+
     logger.info(f"Validation Score: {result.binary_score} | Reason: {result.explanation}")
-    
+
     elapsed_ms = int((time.time() - start_time) * 1000)
-    
+
     if result.binary_score == "yes":
-        return {"next_node": "generator", "validator_time_ms": elapsed_ms}  
+        return {"next_node": "generator", "validator_time_ms": elapsed_ms}
     else:
         return {"next_node": "web_search", "validator_time_ms": elapsed_ms}
 
@@ -162,14 +307,19 @@ def validator_node(state: AgentState) -> dict[str, Any]:
 def web_search_node(state: AgentState) -> dict[str, Any]:
     """Execute a fallback web search when local database resources are insufficient."""
     logger.info("Entering Web Search Node (Tavily)...")
-    query = state["query"]
+    query = _resolved_query(state)
     start_time = time.time()
     web_search_tool = TavilySearchResults(max_results=3)
-    
+
     try:
-        docs = web_search_tool.invoke({"query": query})
+        docs = call_with_retry(
+            lambda: web_search_tool.invoke({"query": query}),
+            max_attempts=3,
+            exceptions=HTTP_RETRYABLE_EXCEPTIONS,
+        )
     except Exception as e:
-        logger.error(f"Tavily Search failed: {str(e)}")
+        # Retries exhausted — degrade gracefully but LOUDLY (this used to fail silently).
+        logger.error("Tavily Search failed after retries: %s", str(e))
         docs = []
 
     if isinstance(docs, str):
@@ -179,25 +329,29 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
             docs = [{"content": docs, "url": "External Web Source"}]
 
     web_results = []
-    
+
     if isinstance(docs, list):
         for d in docs:
             if isinstance(d, dict):
-                web_results.append({
-                    "page_content": d.get("content", ""),
-                    "title": "جستجوی وب",
-                    "video_id": d.get("url", "External Web Source"),
-                    "start_time": 0,
-                    "source_type": "web"
-                })
+                web_results.append(
+                    {
+                        "page_content": d.get("content", ""),
+                        "title": "جستجوی وب",
+                        "video_id": d.get("url", "External Web Source"),
+                        "start_time": 0,
+                        "source_type": "web",
+                    }
+                )
             elif isinstance(d, str):
-                web_results.append({
-                    "page_content": d,
-                    "title": "جستجوی وب",
-                    "video_id": "External Web Source",
-                    "start_time": 0,
-                    "source_type": "web"
-                })
+                web_results.append(
+                    {
+                        "page_content": d,
+                        "title": "جستجوی وب",
+                        "video_id": "External Web Source",
+                        "start_time": 0,
+                        "source_type": "web",
+                    }
+                )
             else:
                 logger.warning(f"Unexpected item in Tavily results: {d}")
     elapsed_ms = int((time.time() - start_time) * 1000)
@@ -205,11 +359,10 @@ def web_search_node(state: AgentState) -> dict[str, Any]:
     return {"documents": web_results, "web_search_time_ms": elapsed_ms}
 
 
-
 def generate_answer_node(state: AgentState) -> dict[str, Any]:
     logger.info("Entering Generator Node...")
     start_time = time.time()
-    query = state["query"]
+    query = _resolved_query(state)
     documents = state.get("documents", [])
 
     context_parts = []
@@ -237,11 +390,10 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
         )
 
     generator_chain = create_generator_chain()
-    result: FinalAnswerSchema = generator_chain.invoke({
-        "query": query,
-        "context": context_text,
-        "transparency_note": transparency_note,
-    })
+    result: FinalAnswerSchema = invoke_with_retry(
+        generator_chain,
+        {"query": query, "context": context_text, "transparency_note": transparency_note},
+    )
 
     # --- ساخت منابع: هرگز به فیلدهای ساختاری (video_id/start_time/url) که مدل
     # تولید کرده اعتماد نمی‌کنیم؛ فقط title/description خلاقانه‌ی مدل را (اگر با
@@ -266,24 +418,28 @@ def generate_answer_node(state: AgentState) -> dict[str, Any]:
             title = llm_title or doc.get("title") or "ارجاع به ویدیو"
             description = llm_desc or (doc.get("page_content", "")[:120].strip() + "…")
 
-            ui_sources.append({
-                "source_type": "video",
-                "video_id": v_id,
-                "start_time": st,
-                "title": title,
-                "description": description,
-            })
+            ui_sources.append(
+                {
+                    "source_type": "video",
+                    "video_id": v_id,
+                    "start_time": st,
+                    "title": title,
+                    "description": description,
+                }
+            )
         elif doc.get("source_type") == "web":
             web_url = doc.get("video_id")  # در نود وب، آدرس داخل video_id ذخیره شده
             web_title = next(
                 (s.title for s in (result.sources or []) if s.source_type == "web" and s.url == web_url),
                 None,
             )
-            ui_sources.append({
-                "source_type": "web",
-                "url": web_url,
-                "title": web_title or doc.get("title", "منبع وب"),
-            })
+            ui_sources.append(
+                {
+                    "source_type": "web",
+                    "url": web_url,
+                    "title": web_title or doc.get("title", "منبع وب"),
+                }
+            )
 
     response_payload = {
         "type": "qa_response",
@@ -301,24 +457,19 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
     start_time = time.time()
     user_id = state["user_id"]
     video_id = state["video_id"]
-    query = state["query"]
+    query = _resolved_query(state)
 
     context = _fetch_video_context(user_id, video_id, query, k=4)
 
     summary_chain = create_summary_chain()
-    
-    summary = summary_chain.invoke({
-        "context": context, 
-        "query": query
-    })
+    summary: VideoSummarySchema = invoke_with_retry(summary_chain, {"context": context, "query": query})
 
     if isinstance(summary, VideoSummarySchema):
         summary_dict = summary.model_dump()
     else:
         summary_dict = summary
 
-    # اضافه کردن تایپ برای تشخیص در فرانت‌اند
     summary_dict["type"] = "video_summary"
-        
+
     elapsed_ms = int((time.time() - start_time) * 1000)
     return {"response": json.dumps(summary_dict, ensure_ascii=False), "generator_time_ms": elapsed_ms}
