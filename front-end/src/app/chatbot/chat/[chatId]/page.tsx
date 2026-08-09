@@ -5,12 +5,12 @@ import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useChatUserId } from "@/hooks/useChatUserId";
 import { useVideo } from "@/context/VideoContext";
 import { fetchChatMeta, fetchChatMessages, sendChatMessage } from "@/lib/chat-api";
-import { parseTimestampsFromText } from "@/lib/utils";
+import { parseTimestampsFromText, parseTimestampToSeconds } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
 import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
 import ChatInterface from "@/components/chat/ChatInterface";
 
-// 🛡️ پوشش امنیتی: وارد کردن هوک کلرک
+
 import { useAuth } from "@clerk/nextjs";
 
 export default function ChatPage() {
@@ -24,7 +24,8 @@ export default function ChatPage() {
   // 🛡️ دریافت تابع استخراج توکن کلرک
   const { getToken } = useAuth();
   
-  const { setActiveVideoId, setTimelineItems, hydrateFromChat } = useVideo();
+  // 🔧 فیکس خطا: timelineItems را هم از کانتکست استخراج کردیم
+  const { setActiveVideoId, timelineItems, setTimelineItems, hydrateFromChat } = useVideo();
 
   const [chat, setChat] = useState<Chat | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -40,10 +41,8 @@ export default function ChatPage() {
     setIsLoadingChat(true);
 
     try {
-      // 🛡️ دریافت توکن برای ارسال به توابع chat-api
       const token = await getToken();
       
-      // 🛡️ رفع خطای تایپ‌اسکریپت (Type Narrowing)
       if (!token) {
         throw new Error("احراز هویت نامعتبر است (توکن یافت نشد).");
       }
@@ -56,17 +55,8 @@ export default function ChatPage() {
       setChat(meta);
       setMessages(msgs);
 
-      // 🔧 فیکس: اول همیشه دیتای واقعی و ذخیره‌شده‌ی چت (سرفصل‌های واقعی LLM +
-      // ترنسکریپت) را از بک‌اند هیدریت می‌کنیم. این هم video_id و هم
-      // timeline_items/transcript_lines واقعی را ست می‌کند و باید همیشه اولویت
-      // داشته باشد.
       hydrateFromChat(meta);
 
-      // Fallback: فقط برای چت‌های قدیمی/legacy که هنوز هیچ timeline_items واقعی
-      // در دیتابیس ندارند (مثلاً قبل از این migration پردازش شده‌اند)، از روی
-      // تایم‌استمپ‌های خام داخل متن پیام‌های تاریخی یک تایم‌لاین موقت می‌سازیم.
-      // قبلاً این بخش بدون قید و شرط اجرا می‌شد و همیشه دیتای واقعی هیدریت‌شده
-      // را با آیتم‌های "From history" (بدون description) overwrite می‌کرد.
       const hasRealTimeline = Array.isArray(meta.timeline_items) && meta.timeline_items.length > 0;
       if (!hasRealTimeline) {
         const timeline: Array<{ id: string; time: string; title: string }> = [];
@@ -97,7 +87,6 @@ export default function ChatPage() {
   }, [chatId, initialVideoUrl, loadChatData]);
 
   useEffect(() => {
-    // 🛡️ متغیر userId فقط برای اطمینان از لاگین بودن چک می‌شود
     if (initialVideoUrl && userId && chatId && !processingTriggered.current) {
       processingTriggered.current = true;
       
@@ -105,15 +94,12 @@ export default function ChatPage() {
         setIsVideoProcessing(true);
         setIsLoadingChat(true);
         try {
-          // در اینجا نیازی به اضافه کردن دستی توکن به هدر نیست، چون درخواست
-          // به API داخلی Next.js می‌رود و خود Next.js و Clerk متوجه هویت کاربر می‌شوند
           const res = await fetch("/api/process-video", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
               video_url: initialVideoUrl,
               chat_id: chatId,
-              // 🛡️ فیلد user_id از اینجا برای همیشه پاک شد!
             }),
           });
           
@@ -157,10 +143,8 @@ export default function ChatPage() {
       setIsTyping(true);
 
       try {
-        // 🛡️ توکن دریافت و به API ارسال می‌شود
         const token = await getToken();
         
-        // 🛡️ رفع خطای تایپ‌اسکریپت
         if (!token) {
           console.error("Token is null. User might be logged out.");
           alert("خطا در احراز هویت. لطفاً دوباره وارد حساب کاربری خود شوید.");
@@ -178,15 +162,40 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // 🔧 فیکس: قبلاً اینجا از روی تایم‌استمپ‌های خام متن پاسخ، آیتم تازه‌ای به
-        // timelineItems (که VideoTimelinePanel/Timeline tab را پر می‌کند) اضافه
-        // می‌شد با title: content.slice(0, 50) — یعنی عنوان همان سوال خود کاربر
-        // بود، نه موضوع واقعی آن بخش از ویدیو. سرفصل‌های واقعی همین حالا از
-        // hydrateFromChat/process-video در timelineItems نشسته‌اند و نباید با
-        // ورودی دستیِ نادرست از هر پیام جدید آلوده شوند. منابع مرتبط با همین
-        // پاسخ (اگر پاسخ ساختاریافته qa_response باشد) از قبل داخل خود
-        // ChatInterface به‌صورت pillهای "Related timestamps" نمایش داده می‌شوند
-        // — نیازی به تزریق دستی در تایم‌لاین اصلی نیست.
+        // 🆕 تزریق منابع ویدیویی
+        try {
+          const parsed = JSON.parse(data.response);
+          
+          if (parsed?.type === "qa_response" && Array.isArray(parsed.sources)) {
+            const toMMSS = (sec: number) => {
+              const m = Math.floor(sec / 60);
+              const s = Math.floor(sec % 60);
+              return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
+            };
+
+            const newVideoItems = parsed.sources
+              .filter((s: any) => s.source_type === "video" && s.video_id === chat?.video_id)
+              .map((s: any, i: number) => ({
+                id: `qa-${assistantMsg.id}-${i}`,
+                time: toMMSS(s.start_time || 0),
+                title: s.title || "ارجاع به ویدیو",
+                description: s.description || "",
+              }));
+
+            if (newVideoItems.length) {
+              // 🔧 فیکس خطا: مستقیماً از timelineItems کانتکست استفاده می‌کنیم
+              const existingTimes = new Set(timelineItems.map((t) => t.time));
+              const merged = [...timelineItems, ...newVideoItems.filter((t) => !existingTimes.has(t.time))];
+              
+              setTimelineItems(
+                merged.sort((a, b) => parseTimestampToSeconds(a.time) - parseTimestampToSeconds(b.time))
+              );
+            }
+          }
+        } catch {
+          // پاسخ ساختاریافته نبود
+        }
+
       } catch (err) {
         console.error(err);
         alert("خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
@@ -194,7 +203,8 @@ export default function ChatPage() {
         setIsTyping(false);
       }
     },
-    [userId, chatId, chat?.video_id, getToken]
+    // 🔧 فیکس خطا: timelineItems را به وابستگی‌ها اضافه کردیم
+    [userId, chatId, chat?.video_id, getToken, timelineItems, setTimelineItems]
   );
 
   const handleClearChat = useCallback(() => {

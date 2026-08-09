@@ -16,11 +16,11 @@ CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
 
 
-
 def _build_combined_documents(
     transcript_data: list[dict[str, Any]],
     video_id: str,
     user_id: str,
+    video_title: str,  # 🆕 اضافه شده برای دریافت عنوان واقعی ویدیو
 ) -> list[Document]:
     """Merge short caption lines into larger documents while keeping start times."""
     combined_docs: list[Document] = []
@@ -42,6 +42,7 @@ def _build_combined_documents(
                         "video_id": video_id,
                         "start_time": current_start_time,
                         "user_id": user_id,
+                        "video_title": video_title,  # 🆕 تزریق عنوان واقعی به متادیتا
                     },
                 )
             )
@@ -59,7 +60,10 @@ def format_segments_for_llm(
     Reuses `_build_combined_documents` so the timestamps line up with the same segment
     boundaries used for ingestion, then truncates to keep the prompt within a safe size.
     """
-    combined_docs = _build_combined_documents(transcript_data, video_id="_", user_id="_")
+    # 🆕 یک مقدار ساختگی ("_") برای video_title پاس می‌دهیم چون اینجا فقط متن برای خلاصه‌سازی لازم است
+    combined_docs = _build_combined_documents(
+        transcript_data, video_id="_", user_id="_", video_title="_"
+    )
 
     lines: list[str] = []
     total_chars = 0
@@ -92,12 +96,14 @@ def process_and_ingest_video(
     transcript_data: list[dict[str, Any]],
     video_id: str,
     user_id: str,
+    video_title: str,  # 🆕 اضافه شده برای دریافت عنوان واقعی ویدیو
 ) -> int:
     """Split transcript into chunks and upsert vectors into Pinecone."""
     settings = get_settings()
     settings.validate_for_ingestion()
 
-    combined_docs = _build_combined_documents(transcript_data, video_id, user_id)
+    # 🆕 عنوان ویدیو را به تابع بیلد پاس می‌دهیم
+    combined_docs = _build_combined_documents(transcript_data, video_id, user_id, video_title)
 
     text_splitter = RecursiveCharacterTextSplitter(
         chunk_size=CHUNK_SIZE,

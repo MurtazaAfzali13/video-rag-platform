@@ -124,6 +124,10 @@ class SourceSchema(BaseModel):
         ..., 
         description="Specify if the source is from a 'video' or 'web'."
     )
+    video_id: Optional[str] = Field(
+        None,
+        description="YouTube video ID this source belongs to (only for source_type='video')."
+    )
     start_time: Optional[int] = Field(
         None, 
         description="The exact start time in seconds (e.g., 214) if this is a video source."
