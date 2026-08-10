@@ -38,10 +38,7 @@ def get_llm(model_name: str, *, temperature: float = 0.0) -> ChatOpenAI:
     )
 
 
-# ============================================================================
-# 1) Contextualize / Rewrite chain — fixes the conversational-memory bug
-# ============================================================================
-
+# this prompt is for improving question and make it more 
 def create_contextualize_chain() -> Any:
     """History-aware query rewriter.
 
@@ -72,17 +69,12 @@ def create_contextualize_chain() -> Any:
     )
 
     settings = get_settings()
-    # A small/fast model is enough for this task — keep it cheap and low-latency
-    # since it now sits on the hot path of every single request.
     return prompt | get_llm(settings.supervisor_model).with_structured_output(
         ContextualizedQuery
     )
 
 
-# ============================================================================
-# 2) Reranker chain (LLM fallback used when a local cross-encoder isn't installed)
-# ============================================================================
-
+#  Reranker chain (LLM fallback used when a local cross-encoder isn't installed)
 def create_rerank_chain() -> Any:
     """LLM-as-reranker fallback. Scores each candidate chunk 0..1 for relevance
     to the (standalone) query. Used by reranker_node only when the
@@ -108,6 +100,7 @@ def create_rerank_chain() -> Any:
     return prompt | get_llm(settings.supervisor_model).with_structured_output(RerankResult)
 
 
+# Prompt for supervisor chain
 def create_supervisor_chain() -> Any:
     """Create chain for supervisor routing decision."""
     system_prompt = (
@@ -119,17 +112,15 @@ def create_supervisor_chain() -> Any:
         "- If search_scope is 'single_video', route to 'video_qa' or 'video_summary'."
     )
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("human", "Query: {query}\nSearch Scope: {search_scope}"),
-        ]
-    )
-
+        ])
     settings = get_settings()
     return prompt | get_llm(settings.supervisor_model).with_structured_output(RouteDecision)
 
 
+# Prompt for validation chain
 def create_validator_chain() -> Any:
     """Create chain for document relevance validation."""
     system_prompt = (
@@ -143,14 +134,14 @@ def create_validator_chain() -> Any:
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
-            ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"),
-        ]
-    )
+            ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"), ])
 
     settings = get_settings()
     return prompt | get_llm(settings.supervisor_model).with_structured_output(GradeDocuments)
 
 
+
+#  for final answer or for generation node 
 def create_generator_chain() -> Any:
     system_prompt = (
         "You are an expert educational assistant.\n"
@@ -180,6 +171,7 @@ def create_generator_chain() -> Any:
     return prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
 
 
+# Prompt for making chapters 
 def create_chapters_chain() -> Any:
     """Create chain that turns a raw, timestamped transcript into a YouTube-style chapter list.
 
@@ -207,14 +199,13 @@ def create_chapters_chain() -> Any:
     prompt = ChatPromptTemplate.from_messages(
         [
             ("system", system_prompt),
-            ("human", "Generate the chapter list now, based only on the transcript segments above."),
-        ]
-    )
+            ("human", "Generate the chapter list now, based only on the transcript segments above."), ])
 
     settings = get_settings()
     return prompt | get_llm(settings.generator_model).with_structured_output(VideoChaptersSchema)
 
 
+# Prompt for summery whole of video
 def create_summary_chain() -> Any:
     """Create chain for video summary generation."""
     system_prompt = (
@@ -228,12 +219,9 @@ def create_summary_chain() -> Any:
         "Transcript excerpts with precise timestamps:\n{context}"
     )
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("human", "{query}"),
-        ]
-    )
-
+        ])
     settings = get_settings()
     return prompt | get_llm(settings.generator_model).with_structured_output(VideoSummarySchema)

@@ -100,6 +100,21 @@ def get_agent_graph():
 
 if __name__ == "__main__":
     print("Initializing graph...")
-
     graph = get_agent_graph()
     print("Graph compiled successfully!")
+
+    # === بخش جدید برای چاپ گراف به صورت PNG ===
+    try:
+        # دریافت دیتای باینری تصویر با استفاده از Mermaid
+        png_data = graph.get_graph().draw_mermaid_png()
+        
+        # ذخیره دیتای باینری در یک فایل فیزیکی
+        output_file = "agent_architecture.png"
+        with open(output_file, "wb") as f:
+            f.write(png_data)
+            
+        print(f"Graph image successfully saved as '{output_file}'")
+        
+    except Exception as e:
+        print(f"Failed to generate or save graph image: {e}")
+        print("Note: draw_mermaid_png() requires an active internet connection as it uses the Mermaid.ink API by default.")

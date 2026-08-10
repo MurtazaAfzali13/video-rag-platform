@@ -7,9 +7,6 @@ from langgraph.graph.message import add_messages
 from pydantic import BaseModel, Field
 
 
-# ============================================================================
-# 1) Contextualize / Rewrite Node schema
-# ============================================================================
 
 class ContextualizedQuery(BaseModel):
     """Output of the history-aware query rewriter (fixes the memory bug)."""
@@ -29,9 +26,7 @@ class ContextualizedQuery(BaseModel):
     )
 
 
-# ============================================================================
-# 2) Reranker schema (LLM-based fallback path)
-# ============================================================================
+
 
 class RerankedDoc(BaseModel):
     index: int = Field(..., description="0-based index of the document in the list it was given, exactly as provided.")
@@ -42,9 +37,7 @@ class RerankResult(BaseModel):
     ranked: List[RerankedDoc] = Field(..., description="One entry per input document, in any order, each scored independently.")
 
 
-# ============================================================================
-# Existing schemas (unchanged)
-# ============================================================================
+
 
 class KeyTakeaway(BaseModel):
     timestamp: str = Field(
@@ -83,17 +76,13 @@ class ChapterItem(BaseModel):
         description=(
             "Timestamp in MM:SS format where this chapter begins. "
             "MUST be copied EXACTLY from one of the [MM:SS] markers given in the transcript "
-            "segments — never invent or estimate a timestamp."
-        ),
-    )
+            "segments — never invent or estimate a timestamp." ),)
     title: str = Field(
         ...,
         description=(
             "A short, punchy topic heading (3-7 words) describing what is being discussed "
             "in the VIDEO at this timestamp, e.g. 'Setting up the Environment'. "
-            "This is a topic label, NEVER a question and NEVER related to any user chat message."
-        ),
-    )
+            "This is a topic label, NEVER a question and NEVER related to any user chat message." ),)
     description: str = Field(
         ...,
         description="One concise sentence summarizing what this specific chapter/segment covers.",
@@ -106,9 +95,7 @@ class VideoChaptersSchema(BaseModel):
         description=(
             "Chronological list of 4-12 distinct topical chapters that organize the whole video. "
             "Return an empty list if the transcript is too short, too generic, or otherwise "
-            "insufficient to derive meaningful chapters."
-        ),
-    )
+            "insufficient to derive meaningful chapters." ),)
 
 
 class RouteDecision(BaseModel):
@@ -138,27 +125,23 @@ class GradeDocuments(BaseModel):
 
 class SourceSchema(BaseModel):
     source_type: Literal["video", "web"] = Field(
-        ..., description="Specify if the source is from a 'video' or 'web'."
-    )
+        ..., description="Specify if the source is from a 'video' or 'web'."     )
     video_id: Optional[str] = Field(
         None,
-        description="YouTube video ID this source belongs to (only for source_type='video').",
-    )
+        description="YouTube video ID this source belongs to (only for source_type='video').",  )
     start_time: Optional[int] = Field(
         None,
         description="The exact start time in seconds (e.g., 214) if this is a video source.",
     )
     title: Optional[str] = Field(
         None,
-        description="A short, catchy title for this specific video chapter or web page (e.g., 'React Algorithms').",
-    )
+        description="A short, catchy title for this specific video chapter or web page (e.g., 'React Algorithms').",)
     description: Optional[str] = Field(
         None,
         description="A brief 1-sentence description of what is covered in this video segment. Leave null for web.",
     )
     url: Optional[str] = Field(
-        None, description="The direct URL of the source if this is a web source."
-    )
+        None, description="The direct URL of the source if this is a web source." )
 
 
 class FinalAnswerSchema(BaseModel):
@@ -167,42 +150,26 @@ class FinalAnswerSchema(BaseModel):
     )
     answer: str = Field(
         ...,
-        description="The main answer text in markdown format. Do NOT include raw URLs or raw timestamps inside this text.",
-    )
+        description="The main answer text in markdown format. Do NOT include raw URLs or raw timestamps inside this text.",)
     sources: List[SourceSchema] = Field(
         default=[],
         description="List of all sources (video timestamps and web links) used to generate this answer.",
     )
 
 
-# ============================================================================
-# Graph state
-# ============================================================================
-
+#  LangGraph State 
 class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
 
-    # Raw query exactly as typed by the user this turn (used for storage/title/etc.)
     query: str
-    # History-aware, fully self-contained version of `query` — this is what every
-    # downstream node (supervisor/retriever/generator/summary) must consume.
-    # Populated by contextualize_node. Falls back to `query` when chat_history is empty.
     standalone_query: Optional[str]
-    # Last N turns pulled from Supabase, converted to LangChain messages, injected
-    # by the /chat endpoint BEFORE the graph runs. This is the actual fix for the
-    # "no memory" bug — previously this never existed in state at all.
     chat_history: List[BaseMessage]
-
     user_id: str
     video_id: Optional[str]
-
     search_scope: Literal["general", "single_video"]
     next_node: Optional[str]
-
     documents: Optional[List[dict]]
-    # Deduplicated list of every distinct video_id present in the final (reranked)
-    # document set. Lets the API layer / frontend know exactly which sources were
-    # actually used, independent of what the LLM claims in FinalAnswerSchema.sources.
+
     retrieved_video_ids: Optional[List[str]]
 
     response: Optional[str]
