@@ -9,12 +9,13 @@ import { ActivityFeed } from "@/components/dashboard/activity";
 import { useDashboard } from "@/context/DashboardContext";
 
 export function DashboardOverview() {
-  const { fetchMetrics, fetchQuestionsMetrics, fetchWorkflowDistribution } = useDashboard();
-  const { user } = useUser(); 
+  const { fetchMetrics, fetchQuestionsMetrics, fetchWorkflowDistribution, fetchVideoMetrics } = useDashboard();
+  const { user } = useUser();
   useEffect(() => {
     fetchMetrics();
     fetchQuestionsMetrics();
     fetchWorkflowDistribution();
+    fetchVideoMetrics();
   }, []);
 
   const firstName = user?.firstName || "there";

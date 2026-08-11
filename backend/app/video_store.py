@@ -152,3 +152,59 @@ def fetch_today_count(*, user_id: str, is_admin: bool) -> int:
         first = result[0]
         return int(first if isinstance(first, (int, float)) else first.get("get_today_video_count", 0))
     return 0
+
+
+class DailyUploadCount(NamedTuple):
+    day: str  # ISO date, e.g. "2026-08-11"
+    count: int
+
+
+class UploadMetrics(NamedTuple):
+    total: int
+    percentage_change: float
+    trend: str  # "up" | "down"
+    daily_counts: list[DailyUploadCount]
+
+
+def fetch_upload_metrics(*, user_id: str, is_admin: bool, days: int = 14) -> UploadMetrics:
+    """Data behind the "Videos Uploaded" metric card: total, trend %, and a sparkline.
+
+    Trend is computed by comparing the two halves of the `days` window (e.g. the
+    most recent 7 days vs. the 7 days before that for the default `days=14`) —
+    the same "recent period vs. prior period" idea as the existing
+    `questions-today` metric, just derived client-side from daily counts instead
+    of a dedicated RPC field, since we already need the daily breakdown for the
+    sparkline anyway.
+    """
+    daily_response = _call_rpc(
+        "get_video_upload_daily_counts",
+        {"p_user_id": user_id, "p_is_admin": is_admin, "p_days": days},
+    )
+    daily_rows: list[dict[str, Any]] = daily_response.json()
+    daily_counts = [DailyUploadCount(day=row["day"], count=row["count"]) for row in daily_rows]
+
+    # Total in the library (all-time, not just the sparkline window) — reuses
+    # the paginated list RPC's window-function total_count via a 1-row fetch,
+    # rather than adding yet another RPC just to count all rows.
+    total_page = fetch_videos(user_id=user_id, is_admin=is_admin, limit=1, offset=0)
+    total = total_page.total_count
+
+    midpoint = len(daily_counts) // 2
+    previous_period_count = sum(entry.count for entry in daily_counts[:midpoint])
+    recent_period_count = sum(entry.count for entry in daily_counts[midpoint:])
+
+    if previous_period_count > 0:
+        percentage_change = ((recent_period_count - previous_period_count) / previous_period_count) * 100
+    elif recent_period_count > 0:
+        percentage_change = 100.0  # went from 0 -> something: treat as a full swing up
+    else:
+        percentage_change = 0.0
+
+    trend = "up" if percentage_change >= 0 else "down"
+
+    return UploadMetrics(
+        total=total,
+        percentage_change=round(percentage_change, 1),
+        trend=trend,
+        daily_counts=daily_counts,
+    )

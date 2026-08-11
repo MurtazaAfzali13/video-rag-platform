@@ -41,13 +41,14 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+from datetime import date
 
 from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from app.auth import get_current_user_with_role, AuthenticatedUser
-from app.video_store import VideoStoreError, fetch_today_count, fetch_videos
+from app.video_store import VideoStoreError, fetch_today_count, fetch_upload_metrics, fetch_videos
 
 logger = logging.getLogger(__name__)
 
@@ -68,17 +69,23 @@ _video_list_lock = threading.Lock()
 _today_count_cache: TTLCache = TTLCache(maxsize=512, ttl=TODAY_COUNT_CACHE_TTL_SECONDS)
 _today_count_lock = threading.Lock()
 
+# Backs the "Videos Uploaded" metric card (total + trend % + sparkline). Same
+# 5-minute cadence as the today-count stat — it's a dashboard summary number,
+# not something that needs to be second-fresh.
+_upload_metrics_cache: TTLCache = TTLCache(maxsize=512, ttl=TODAY_COUNT_CACHE_TTL_SECONDS)
+_upload_metrics_lock = threading.Lock()
+
 
 def _scope_for(auth: AuthenticatedUser) -> str:
     return "admin" if auth.is_admin else auth.user_id
 
 
 def invalidate_user_video_cache(user_id: str) -> None:
-    """Evict cached list/today-count entries for one user (and the shared admin view).
+    """Evict cached list/today-count/metrics entries for one user (and the shared admin view).
 
     Call this right after a new video is successfully ingested, so the
     uploader (and any admin dashboard) sees it on their very next request
-    instead of waiting out the 2-hour TTL. Intentionally does NOT touch
+    instead of waiting out the cache TTLs. Intentionally does NOT touch
     other users' cached entries — nobody else's list changed.
     """
     with _video_list_lock:
@@ -89,6 +96,10 @@ def invalidate_user_video_cache(user_id: str) -> None:
     with _today_count_lock:
         _today_count_cache.pop(user_id, None)
         _today_count_cache.pop("admin", None)
+
+    with _upload_metrics_lock:
+        _upload_metrics_cache.pop(user_id, None)
+        _upload_metrics_cache.pop("admin", None)
 
 
 # --- Schemas -----------------------------------------------------------------
@@ -110,6 +121,19 @@ class VideoListResponse(BaseModel):
 
 class TodayCountResponse(BaseModel):
     count: int
+    cached: bool
+
+
+class DailyCountPoint(BaseModel):
+    label: str
+    value: int
+
+
+class VideoUploadMetricsResponse(BaseModel):
+    total: int
+    percentage_change: float
+    trend: str  # "up" | "down"
+    chart_data: list[DailyCountPoint]
     cached: bool
 
 
@@ -185,6 +209,53 @@ async def today_video_count(
     return TodayCountResponse(count=count, cached=False)
 
 
+@router.get("/videos/stats/metrics", response_model=VideoUploadMetricsResponse)
+async def video_upload_metrics(
+    days: int = Query(14, ge=2, le=90),
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
+) -> VideoUploadMetricsResponse:
+    """Data for the "Videos Uploaded" metric card: total, trend %, and a sparkline.
+
+    Cached for 5 minutes per caller scope, same cadence as `stats/today`.
+    """
+    cache_key = _scope_for(auth)
+
+    with _upload_metrics_lock:
+        cached_metrics = _upload_metrics_cache.get(cache_key)
+    if cached_metrics is not None:
+        return VideoUploadMetricsResponse(**cached_metrics, cached=True)
+
+    try:
+        metrics = await run_in_threadpool_fetch_upload_metrics(
+            user_id=auth.user_id, is_admin=auth.is_admin, days=days
+        )
+    except VideoStoreError as exc:
+        logger.error("Failed to fetch upload metrics for user %s: %s", auth.user_id, exc)
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    payload = {
+        "total": metrics.total,
+        "percentage_change": metrics.percentage_change,
+        "trend": metrics.trend,
+        "chart_data": [
+            {"label": _short_weekday_label(entry.day), "value": entry.count} for entry in metrics.daily_counts
+        ],
+    }
+
+    with _upload_metrics_lock:
+        _upload_metrics_cache[cache_key] = payload
+
+    return VideoUploadMetricsResponse(**payload, cached=False)
+
+
+def _short_weekday_label(iso_date: str) -> str:
+    """"2026-08-11" -> "Tue" for the sparkline's x-axis-ish labels."""
+    try:
+        return date.fromisoformat(iso_date).strftime("%a")
+    except ValueError:
+        return iso_date
+
+
 # --- thin async wrappers around the sync store functions ---------------------
 # `video_store.py` is intentionally sync (plain httpx.Client), same as
 # chat_store.py — offloaded to a thread here rather than making the whole
@@ -196,3 +267,7 @@ async def run_in_threadpool_fetch_videos(*, user_id: str, is_admin: bool, limit:
 
 async def run_in_threadpool_fetch_today_count(*, user_id: str, is_admin: bool) -> int:
     return await asyncio.to_thread(fetch_today_count, user_id=user_id, is_admin=is_admin)
+
+
+async def run_in_threadpool_fetch_upload_metrics(*, user_id: str, is_admin: bool, days: int):
+    return await asyncio.to_thread(fetch_upload_metrics, user_id=user_id, is_admin=is_admin, days=days)
