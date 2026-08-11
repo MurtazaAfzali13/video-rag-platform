@@ -389,12 +389,7 @@ export function VideoTimelinePanel({
                       </span>
 
                       <div className="flex-1 min-w-0 pr-2">
-                        {/* 
-                          استفاده از line-clamp-1 باعث می‌شود اگر متن طولانی مثل
-                          "Using logical AND in React allows for conditional rendering..."
-                          را ارسال کنید، به صورت اتوماتیک فقط بخش اول آن "Using logical AND in React..." 
-                          نمایش داده شود و به عنوان یک سرفصل عالی عمل کند.
-                        */}
+                       
                         <h4 className="text-[14px] font-medium text-slate-200 group-hover:text-white transition-colors line-clamp-1 leading-snug">
                           {item.title}
                         </h4>
