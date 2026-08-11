@@ -1,11 +1,4 @@
-"""Supabase-backed dashboard metrics/analytics (backend-only).
 
-این فایل از chat_store.py جدا شده: هر چیزی که مربوط به داشبورد (توزیع
-گره‌های LangGraph، متریک‌های کلی، و متریک سوالات) است اینجاست. توابع
-مشترک (_headers, _base_url, _now_iso) و ChatStoreError همچنان در
-chat_store.py تعریف شده‌اند و اینجا import می‌شوند تا یک منبع واحد از
-تنظیمات/خطا وجود داشته باشد.
-"""
 
 from __future__ import annotations
 
@@ -29,7 +22,6 @@ def get_user_workflow_distribution(
     is_admin: bool = False,
     timeframe: str = "all",
 ) -> list[dict[str, Any]]:
-    """Fetch aggregated LangGraph node execution stats via Supabase RPC."""
     if timeframe not in _VALID_TIMEFRAMES:
         timeframe = "all"
 
@@ -61,7 +53,6 @@ def save_workflow_trace(
     other_time_ms: int = 0,     
     success: bool = True
 ) -> None:
-    """Saves the execution trace of LangGraph nodes into the Supabase 'traces' table."""
     url = f"{_base_url()}/rest/v1/traces"
     headers = _headers(get_settings().supabase_service_role_key)
     
@@ -93,7 +84,6 @@ def save_workflow_trace(
 
 
 def get_user_metrics(user_id: str, is_admin: bool = False) -> dict:
-    """Fetch general dashboard metrics (e.g., total web searches) for a user or admin."""
     headers = _headers(get_settings().supabase_service_role_key)
     
     try:
@@ -101,7 +91,6 @@ def get_user_metrics(user_id: str, is_admin: bool = False) -> dict:
             traces_url = f"{_base_url()}/rest/v1/traces"
             
             if is_admin:
-                # 🛡️ مسیر ادمین: دریافت کل جستجوهای وب در سیستم (بدون فیلتر روی چت خاص)
                 traces_res = client.get(
                     traces_url,
                     headers=headers,
@@ -111,7 +100,6 @@ def get_user_metrics(user_id: str, is_admin: bool = False) -> dict:
                     }
                 )
             else:
-                # 👤 مسیر کاربر معمولی: ابتدا یافتن چت‌های کاربر، سپس فیلتر کردن
                 chats_url = f"{_base_url()}/rest/v1/chats"
                 chats_res = client.get(
                     chats_url, 
@@ -221,7 +209,6 @@ def get_user_questions_metrics(
     is_admin: bool = False,
     timeframe: str = "week",
 ) -> dict[str, Any]:
-    """Fetch question counts (user-role messages), bucketed and compared per the requested timeframe."""
     if timeframe not in _VALID_QUESTIONS_TIMEFRAMES:
         timeframe = "week"
 
@@ -238,7 +225,7 @@ def get_user_questions_metrics(
         period, granularity = None, "month"
 
     current_start = now - period if period else None
-    fetch_start = now - (period * 2) if period else None  # هم بازه‌ی فعلی هم بازه‌ی مقایسه رو پوشش می‌ده
+    fetch_start = now - (period * 2) if period else None 
 
     logger.info(
         "Fetching questions metrics for user_id=%s, is_admin=%s, timeframe=%s",
@@ -252,7 +239,7 @@ def get_user_questions_metrics(
             if fetch_start is not None:
                 base_params["created_at"] = f"gte.{fetch_start.isoformat()}"
 
-            # ---------- همون منطق RBAC قبلی، دست‌نخورده ----------
+          
             if is_admin:
                 messages_res = client.get(messages_url, headers=headers, params=base_params)
             else:
@@ -290,9 +277,9 @@ def get_user_questions_metrics(
                     datetime.fromisoformat(raw.replace("Z", "+00:00")).astimezone(timezone.utc)
                 )
 
-            # ---------- ساخت باکت‌های چارت ----------
+           
             if granularity == "hour":
-                assert current_start is not None  # 🔑 برای Mypy: توی این شاخه period همیشه مقدار داره
+                assert current_start is not None  
                 buckets = _build_hour_buckets(current_start, now)
                 counts: dict[datetime, int] = {}
                 for ts in timestamps:
@@ -302,7 +289,7 @@ def get_user_questions_metrics(
                 chart_data = [{"label": b.strftime("%H:%M"), "value": counts.get(b, 0)} for b in buckets]
 
             elif granularity == "day":
-                assert current_start is not None  # 🔑 برای Mypy: توی این شاخه period همیشه مقدار داره
+                assert current_start is not None 
                 buckets_d = _build_day_buckets(current_start.date(), now.date())
                 counts_d: dict[date, int] = {}
                 for ts in timestamps:
@@ -320,7 +307,7 @@ def get_user_questions_metrics(
                     counts_m[key] = counts_m.get(key, 0) + 1
                 chart_data = [{"label": b.strftime("%b"), "value": counts_m.get(b, 0)} for b in buckets_m]
 
-            # ---------- percentage_change / trend ----------
+           
             if granularity == "month":
                 this_month = _month_start(now.date())
                 last_month = (
@@ -348,7 +335,7 @@ def get_user_questions_metrics(
             )
 
             return {
-                "total_today": total_current,  # نام فیلد برای سازگاری با اسکیمای فعلی حفظ شده
+                "total_today": total_current,  
                 "percentage_change": percentage_change,
                 "trend": trend,
                 "chart_data": chart_data,

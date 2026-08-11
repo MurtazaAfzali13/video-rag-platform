@@ -1,4 +1,3 @@
-"""Chunk YouTube transcripts and store embeddings in Pinecone."""
 
 from __future__ import annotations
 
@@ -22,7 +21,6 @@ def _build_combined_documents(
     user_id: str,
     video_title: str,  
 ) -> list[Document]:
-    """Merge short caption lines into larger documents while keeping start times."""
     combined_docs: list[Document] = []
     current_text = ""
     current_start_time = 0.0
@@ -55,11 +53,7 @@ def format_segments_for_llm(
     transcript_data: list[dict[str, Any]],
     max_chars: int = 12000,
 ) -> str:
-    """Build a compact '[MM:SS] text' blob from the raw transcript for chapter-extraction prompts.
-
-    Reuses `_build_combined_documents` so the timestamps line up with the same segment
-    boundaries used for ingestion, then truncates to keep the prompt within a safe size.
-    """
+   
     combined_docs = _build_combined_documents(
         transcript_data, video_id="_", user_id="_", video_title="_"
     )
@@ -97,7 +91,6 @@ def process_and_ingest_video(
     user_id: str,
     video_title: str,  
 ) -> int:
-    """Split transcript into chunks and upsert vectors into Pinecone."""
     settings = get_settings()
     settings.validate_for_ingestion()
 

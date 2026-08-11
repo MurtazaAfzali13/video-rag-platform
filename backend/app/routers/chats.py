@@ -75,11 +75,7 @@ class MessageRecord(BaseModel):
 # --- Helpers ---
 
 def _extract_display_text(raw_content: str) -> str:
-    """Assistant messages are stored as raw JSON payloads (qa_response /
-    video_summary). For chat_history we want the human-readable text only —
-    feeding raw JSON into the contextualize/generator prompts as "assistant
-    said: {...}" wastes tokens and confuses the LLM.
-    """
+ 
     try:
         parsed = json.loads(raw_content)
     except (json.JSONDecodeError, TypeError):
@@ -96,12 +92,10 @@ def _extract_display_text(raw_content: str) -> str:
 
 
 def _build_chat_history(messages: list[dict], *, max_turns: int = CHAT_HISTORY_TURNS) -> list[BaseMessage]:
-    """Convert Supabase message rows (oldest -> newest) into LangChain messages,
-    keeping only the last `max_turns` turns. THIS is what actually fixes the
-    memory bug: previously nothing from Supabase ever reached AgentState.
-    """
     trimmed = messages[-(max_turns * 1):] if messages else []
+    
     history: list[BaseMessage] = []
+    
     for m in trimmed:
         role = m.get("role")
         content = m.get("content", "")
@@ -125,9 +119,7 @@ async def _run_pipeline(
     if not existing:
         await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
 
-    # Single fetch serves both is_first_interaction AND chat_history — avoids a
-    # second round-trip to Supabase (the old code queried with limit=1 just for
-    # the boolean check and threw the rows away).
+   
     existing_messages = await asyncio.to_thread(list_messages, target_chat_id, limit=200)
     is_first_interaction = len(existing_messages) == 0
     chat_history = _build_chat_history(existing_messages)
@@ -318,20 +310,7 @@ async def chat_endpoint(
         raise HTTPException(status_code=500, detail=f"خطای سرور در جریان هوش مصنوعی: {str(exc)}") from exc
 
 
-# ============================================================================
-# 6) SSE Streaming endpoint (bonus)
-# ============================================================================
-#
-# Structured output (`with_structured_output`) does not stream token-by-token
-# in a UI-friendly way across all OpenRouter models — partial JSON isn't safe
-# to render as it arrives. Instead we stream at NODE granularity using
-# `astream_events`, giving the frontend a real-time "retrieving -> reranking ->
-# validating -> generating" progress experience, then push the final structured
-# payload as one last SSE event. This is the safe, model-agnostic approach.
-#
-# For providers/models that DO support incremental function-calling deltas,
-# you can additionally forward `on_chat_model_stream` events for the generator
-# node specifically to get a true typing effect on the `answer` field.
+
 
 NODE_LABELS_FA = {
     "contextualize": "در حال بازخوانی مکالمه…",

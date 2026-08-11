@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from typing import Optional, List, Dict, Any
-# 🛡️ پوشش امنیتی: Depends اضافه شد تا تابع اعتبارسنجی را به عنوان پیش‌نیاز تعریف کنیم
 from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel, Field
 from youtube_transcript_api._errors import YouTubeTranscriptApiException
@@ -14,7 +13,7 @@ from app.youtube_client import (
     is_invalid_video_id,
     is_transcript_blocked,
     is_transcript_not_found,
-    fetch_video_title,  # 🆕 ایمپورت تابع دریافت عنوان ویدیو
+    fetch_video_title,  
 )
 from app.chat_store import (
     ChatStoreError,
@@ -27,20 +26,21 @@ from app.chat_store import (
 from app.graph.chains import create_chapters_chain
 from app.graph.state import VideoChaptersSchema
 
-# 🛡️ Auth + RBAC: dependency that returns both the verified user_id and their role
 from app.auth import get_current_user_with_role, AuthenticatedUser
+
+
+from app.routers.video_route import invalidate_user_video_cache
 
 logger = logging.getLogger(__name__)
 
-# ساخت Router اختصاصی برای ویدیوها
+
 router = APIRouter(prefix="/api", tags=["Video"])
 
 
-# --- Pydantic Schemas ---
 
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
-    # 🛡️ پوشش امنیتی: فیلد user_id به طور کامل از اینجا حذف شد تا کلاینت نتواند آن را جعل کند
+
     chat_id: str = Field(..., min_length=1, description="Mandatory client-generated UUID for the session")
 
 
@@ -55,14 +55,12 @@ class ProcessVideoResponse(BaseModel):
     transcript_lines: Optional[List[Dict[str, Any]]] = None
 
 
-# --- Endpoints ---
+
 
 @router.post("/process-video", response_model=ProcessVideoResponse)
 async def process_video(
     request: VideoRequest,
-    # 🛡️ این خط باعث می‌شود FastAPI قبل از اجرای بدنه تابع، توکن را چک کند و هم user_id و
-    # هم role را مستقیماً از JWT تایید‌شده استخراج کند — هیچ‌کدام هرگز از بدنه/URL درخواست
-    # گرفته نمی‌شوند.
+   
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ) -> ProcessVideoResponse:
     user_id = auth.user_id
@@ -87,7 +85,7 @@ async def process_video(
         )
 
     try:
-        # 🆕 دریافت عنوان واقعی ویدیو
+      
         video_title = await fetch_video_title(video_id)
 
         my_proxies = None
@@ -99,7 +97,6 @@ async def process_video(
         else:
             transcript = await asyncio.to_thread(fetch_transcript, video_id)
         
-        # 🆕 تزریق عنوان واقعی ویدیو به تابع پردازش و اینجکشن دیتابیس
         chunks_processed = await asyncio.to_thread(
             process_and_ingest_video,
             transcript,
@@ -114,7 +111,6 @@ async def process_video(
         if not existing_chat:
             await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
 
-        # 🛡️ پوشش امنیتی: جایگزینی request.user_id با user_id
         await asyncio.to_thread(
             update_chat_video_id,
             target_chat_id,
@@ -122,7 +118,6 @@ async def process_video(
             video_id,
         )
 
-        # --- پردازش دیتا برای فرانت‌اند ---
         def format_time(seconds: float) -> str:
             mins = int(seconds // 60)
             secs = int(seconds % 60)
@@ -166,6 +161,12 @@ async def process_video(
         except Exception as exc:
             logger.warning("Failed to persist timeline for chat %s: %s", target_chat_id, exc)
 
+       
+        try:
+            invalidate_user_video_cache(user_id)
+        except Exception as exc:
+            logger.warning("Failed to invalidate video cache for user %s: %s", user_id, exc)
+
     except YouTubeTranscriptApiException as exc:
         logger.error(f"Failed to fetch transcript for video {video_id}: {exc}")
         if is_transcript_blocked(exc):
@@ -190,7 +191,7 @@ async def process_video(
         chat_id=target_chat_id,
         chunks_processed=chunks_processed,
         message="ویدیو با موفقیت پردازش و به چت متصل شد.",
-        title=video_title, # 🆕 در اینجا عنوان واقعی به جای متن فیک ارسال می‌شود
-        timeline_items=timeline_items,  # سرفصل‌های واقعی تولیدشده از ترنسکریپت (یا [] در صورت شکست)
+        title=video_title, 
+        timeline_items=timeline_items, 
         transcript_lines=formatted_transcript
     )

@@ -1,10 +1,4 @@
-"""Supabase-backed user overview/analytics store (backend-only).
 
-Deliberately its own connection module — separate from chat_store.py and
-dashboard_store.py — so this read-only analytics surface can evolve
-independently (e.g. pointed at a read replica, or a service-role key scoped
-to only this RPC) without ever touching chat/message persistence code.
-"""
 
 from __future__ import annotations
 

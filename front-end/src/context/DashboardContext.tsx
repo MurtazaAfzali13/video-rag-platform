@@ -40,18 +40,35 @@ export interface QuestionsMetricsData {
   chart_data: QuestionsChartPoint[];
 }
 
+// 🆕 داده‌ی کارت "Videos Uploaded" — همان شکل QuestionsMetricsData را دنبال می‌کند
+// چون MetricsGrid همان الگوی { value, change, trend, chart_data } را انتظار دارد.
+export interface VideoChartPoint {
+  label: string;
+  value: number;
+}
+
+export interface VideoMetricsData {
+  total: number;
+  percentage_change: number;
+  trend: "up" | "down";
+  chart_data: VideoChartPoint[];
+}
+
 interface DashboardState {
   workflowDistribution: DonutDatum[];
   workflowTimeframe: WorkflowTimeframe;
   questionsTimeframe: QuestionsTimeframe;
   metricsData: DashboardMetrics | null;
   questionsMetrics: QuestionsMetricsData | null;
+  videoMetrics: VideoMetricsData | null;
   isLoading: boolean;
   error: string | null;
   isMetricsLoading: boolean;
   metricsError: string | null;
   isQuestionsLoading: boolean;
   questionsError: string | null;
+  isVideoMetricsLoading: boolean;
+  videoMetricsError: string | null;
 }
 
 type DashboardAction =
@@ -65,7 +82,10 @@ type DashboardAction =
   | { type: "FETCH_METRICS_FAILURE"; payload: string }
   | { type: "FETCH_QUESTIONS_START" }
   | { type: "FETCH_QUESTIONS_SUCCESS"; payload: QuestionsMetricsData }
-  | { type: "FETCH_QUESTIONS_FAILURE"; payload: string };
+  | { type: "FETCH_QUESTIONS_FAILURE"; payload: string }
+  | { type: "FETCH_VIDEO_METRICS_START" }
+  | { type: "FETCH_VIDEO_METRICS_SUCCESS"; payload: VideoMetricsData }
+  | { type: "FETCH_VIDEO_METRICS_FAILURE"; payload: string };
 
 // ---------------- Reducer ----------------
 
@@ -75,12 +95,15 @@ const initialState: DashboardState = {
   questionsTimeframe: "week",
   metricsData: null,
   questionsMetrics: null,
+  videoMetrics: null,
   isLoading: false,
   error: null,
   isMetricsLoading: false,
   metricsError: null,
   isQuestionsLoading: false,
   questionsError: null,
+  isVideoMetricsLoading: false,
+  videoMetricsError: null,
 };
 
 const dashboardReducer = (state: DashboardState, action: DashboardAction): DashboardState => {
@@ -110,6 +133,13 @@ const dashboardReducer = (state: DashboardState, action: DashboardAction): Dashb
     case "FETCH_QUESTIONS_FAILURE":
       return { ...state, isQuestionsLoading: false, questionsError: action.payload };
 
+    case "FETCH_VIDEO_METRICS_START":
+      return { ...state, isVideoMetricsLoading: true, videoMetricsError: null };
+    case "FETCH_VIDEO_METRICS_SUCCESS":
+      return { ...state, isVideoMetricsLoading: false, videoMetrics: action.payload };
+    case "FETCH_VIDEO_METRICS_FAILURE":
+      return { ...state, isVideoMetricsLoading: false, videoMetricsError: action.payload };
+
     default:
       return state;
   }
@@ -122,6 +152,7 @@ const DashboardContext = createContext<{
   fetchWorkflowDistribution: (timeframe?: WorkflowTimeframe) => Promise<void>;
   fetchMetrics: () => Promise<void>;
   fetchQuestionsMetrics: (timeframe?: QuestionsTimeframe) => Promise<void>;
+  fetchVideoMetrics: () => Promise<void>;
 } | undefined>(undefined);
 
 // ---------------- Provider ----------------
@@ -210,9 +241,37 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     [baseUrl, getToken] // 🔑 دیگه به state.questionsTimeframe وابسته نیست → هویت ثابت
   );
 
+  // 🆕 دقیقاً هم‌الگوی fetchQuestionsMetrics — بدون timeframe چون
+  // GET /api/videos/stats/metrics فقط یک پارامتر ثابت `days` دارد (پیش‌فرض ۱۴
+  // روز، سمت بک‌اند). اگر بعداً خواستید timeframe هم اضافه کنید، همین الگوی
+  // ref-based بالا را کپی کنید تا هویت تابع ثابت بماند.
+  const fetchVideoMetrics = useCallback(async () => {
+    dispatch({ type: "FETCH_VIDEO_METRICS_START" });
+    try {
+      const token = await getToken();
+      const res = await fetch(`${baseUrl}/api/videos/stats/metrics`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error("مشکلی در دریافت متریک ویدیوها رخ داد.");
+
+      const data = await res.json();
+      dispatch({ type: "FETCH_VIDEO_METRICS_SUCCESS", payload: data });
+    } catch (err: unknown) {
+      const message =
+        err instanceof Error ? err.message : "خطای ناشناخته در دریافت متریک ویدیوها";
+      dispatch({ type: "FETCH_VIDEO_METRICS_FAILURE", payload: message });
+    }
+  }, [baseUrl, getToken]);
+
   return (
     <DashboardContext.Provider
-      value={{ state, fetchWorkflowDistribution, fetchMetrics, fetchQuestionsMetrics }}
+      value={{
+        state,
+        fetchWorkflowDistribution,
+        fetchMetrics,
+        fetchQuestionsMetrics,
+        fetchVideoMetrics,
+      }}
     >
       {children}
     </DashboardContext.Provider>

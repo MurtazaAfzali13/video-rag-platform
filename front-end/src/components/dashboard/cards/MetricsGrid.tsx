@@ -33,9 +33,24 @@ export function MetricsGrid() {
         };
       }
 
+      if (metric.id === "videos-uploaded" && state.videoMetrics) {
+        const { total, percentage_change, trend, chart_data } = state.videoMetrics;
+        return {
+          ...metric,
+          value: total.toLocaleString("en-US"),
+          rawValue: total,
+          change: percentage_change,
+          trend,
+          spark:
+            chart_data.length > 0
+              ? chart_data.map((point) => ({ label: point.label, value: point.value }))
+              : metric.spark,
+        };
+      }
+
       return metric;
     });
-  }, [state.metricsData, state.questionsMetrics]);
+  }, [state.metricsData, state.questionsMetrics, state.videoMetrics]);
 
   return (
     <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-8">

@@ -41,14 +41,7 @@ def _now_iso() -> str:
 
 
 def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> httpx.Response:
-    """Single choke point for every Supabase HTTP call.
-    Wraps the call with exponential-backoff retry (via retry_utils) for
-    connection-level failures (TLS handshake timeout, DNS, connection reset,
-    etc.). If retries are exhausted, raises ChatStoreError explicitly instead
-    of letting a raw httpx exception escape — this is what makes the existing
-    `except ChatStoreError -> HTTP 503` handling in the routers actually work
-    for network failures, not just for Supabase 4xx/5xx responses.
-    """
+ 
     def _do_call() -> httpx.Response:
         return getattr(client, method)(url, **kwargs)
     try:
@@ -69,10 +62,7 @@ def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> http
 
 
 def _ensure_video_exists(video_id: str, user_id: str) -> None:
-    """
-    بررسی می‌کند که آیا ویدیو در جدول videos وجود دارد یا خیر.
-    اگر وجود نداشت، یک رکورد اولیه موقت می‌سازد تا محدودیت Foreign Key نقض نشود.
-    """
+   
     url = f"{_base_url()}/rest/v1/videos"
     headers = _headers(get_settings().supabase_service_role_key)
 
@@ -97,7 +87,6 @@ def _ensure_video_exists(video_id: str, user_id: str) -> None:
 
 
 def _exact_count(table: str, params: dict[str, str]) -> int:
-    """Get an exact row count for a filtered Supabase table WITHOUT fetching the rows."""
     headers = _headers(get_settings().supabase_service_role_key)
     headers["Prefer"] = "count=exact"
 
@@ -118,7 +107,6 @@ def _exact_count(table: str, params: dict[str, str]) -> int:
 
 
 def get_user_video_count(user_id: str) -> int:
-    """Count how many distinct videos this user has processed."""
     return _exact_count(
         "chats",
         {"user_id": f"eq.{user_id}", "video_id": "not.is.null"},
@@ -126,7 +114,6 @@ def get_user_video_count(user_id: str) -> int:
 
 
 def get_user_message_count(user_id: str) -> int:
-    """Count how many user-authored chat messages (questions) this user has ever sent."""
     chat_ids = [chat["id"] for chat in list_chats(user_id, limit=1000)]
     if not chat_ids:
         return 0
@@ -252,7 +239,7 @@ def save_message(
 
 
 def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
-    """List all messages for a chat."""
+    
     with httpx.Client(timeout=_TIMEOUT) as client:
         response = _request(
             client,
@@ -274,7 +261,6 @@ def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
 
 
 def derive_chat_title(query: str) -> str:
-    """Derive a chat title from the first user query."""
     cleaned = " ".join(query.strip().split())
     if len(cleaned) <= 60:
         return cleaned or "New Chat"

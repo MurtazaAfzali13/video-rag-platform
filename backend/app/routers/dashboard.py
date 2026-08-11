@@ -73,7 +73,7 @@ async def workflow_distribution_endpoint(
 async def metrics_endpoint(
     auth: AuthenticatedUser = Depends(get_current_user_with_role)
 ):
-    """دریافت آمارهای عددی بالای داشبورد مانند تعداد کل جستجوهای وب"""
+  
     try:
         metrics_data = await asyncio.to_thread(get_user_metrics, auth.user_id, auth.is_admin)
         return metrics_data
@@ -88,7 +88,7 @@ async def questions_metrics_endpoint(
     timeframe: Timeframe = Query("week", description="بازه‌ی زمانی: today | week | month | all"),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
-    """دریافت آمار سوالات پرسیده‌شده برای KPI و چارت، بر اساس بازه‌ی زمانی انتخابی"""
+  
     try:
         metrics_data = await asyncio.to_thread(
             get_user_questions_metrics, auth.user_id, auth.is_admin, timeframe

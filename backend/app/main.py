@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from app.config import get_settings
-from app.routers import video, chats,dashboard,monitoring,users_route
+from app.routers import video, chats,dashboard,monitoring,users_route,video_route
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +61,7 @@ def create_app() -> FastAPI:
     app.include_router(dashboard.router)
     app.include_router(monitoring.router)
     app.include_router(users_route.router)
+    app.include_router(video_route.router)
 
     @app.get("/health", response_model=HealthResponse, tags=["System"])
     async def health() -> HealthResponse:
