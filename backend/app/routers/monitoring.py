@@ -34,8 +34,8 @@ async def response_time_endpoint(
     timeframe: Timeframe = Query("week", description="بازه‌ی زمانی: today | week | month | all"),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
-    """میانگین زمان پاسخ (ثانیه) برای KPI و چارت Response Time در صفحه Monitoring."""
     try:
+        
         metrics_data = await asyncio.to_thread(
             get_response_time_metrics, auth.user_id, auth.is_admin, timeframe
         )
@@ -70,12 +70,7 @@ async def health_score_endpoint(
     timeframe: Timeframe = Query("week", description="بازه‌ی زمانی: today | week | month | all"),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
-    """امتیاز سلامت پایپ‌لاین CRAG (Retrieval/Validation/Retry/Error Success) در صفحه Monitoring.
-
-    ادمین: کل سیستم. کاربر معمولی: فقط traces مربوط به چت‌های خودش — این تفکیک
-    کاملاً روی سرور و بر اساس auth.is_admin (از JWT) اتفاق می‌افتد؛ فرانت‌اند
-    نیازی به منطق جدا برای ادمین/کاربر ندارد.
-    """
+   
     try:
         score_data = await asyncio.to_thread(
             get_ai_health_score, auth.user_id, auth.is_admin, timeframe

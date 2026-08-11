@@ -37,11 +37,10 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Video"])
 
 
-# --- Pydantic Schemas ---
 
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
-    # 🛡️ پوشش امنیتی: فیلد user_id به طور کامل از اینجا حذف شد تا کلاینت نتواند آن را جعل کند
+
     chat_id: str = Field(..., min_length=1, description="Mandatory client-generated UUID for the session")
 
 
@@ -56,7 +55,7 @@ class ProcessVideoResponse(BaseModel):
     transcript_lines: Optional[List[Dict[str, Any]]] = None
 
 
-# --- Endpoints ---
+
 
 @router.post("/process-video", response_model=ProcessVideoResponse)
 async def process_video(
@@ -86,7 +85,7 @@ async def process_video(
         )
 
     try:
-        # 🆕 دریافت عنوان واقعی ویدیو
+      
         video_title = await fetch_video_title(video_id)
 
         my_proxies = None

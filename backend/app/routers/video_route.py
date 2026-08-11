@@ -1,40 +1,4 @@
-"""Video dashboard endpoints: paginated video list + today's-upload stat.
 
-CACHING DECISION (updated)
----------------------------
-Both endpoints are now cached in-process with `cachetools.TTLCache`:
-
-- `/api/videos`        -> TTL = 2 hours, keyed by (scope, limit, offset)
-- `/api/videos/stats/today` -> TTL = 5 minutes, keyed by scope
-
-`scope` is `"admin"` for admin callers (one shared view of "all videos") or
-the caller's `user_id` for regular users.
-
-Why 2 hours for the list now (this was intentionally NOT cached before):
-the frontend was hitting this endpoint on every mount/navigation, which is
-unnecessarily heavy for data — a video list — that essentially never needs
-to be second-fresh. Thumbnails are static YouTube images anyway, so "stale"
-here just means "might not show a video someone else added in the last two
-hours," which is an acceptable tradeoff in exchange for far fewer Supabase
-round-trips. The frontend mirrors this with a matching 2-hour SWR
-`dedupingInterval` + `refreshInterval` (see `VideoContext.tsx`) so the two
-layers agree on the same cadence instead of the client polling faster than
-the server would ever return fresh data anyway.
-
-The one case that must NOT wait 2 hours: a user who just processed a video
-should see it in their own list immediately. That's handled by
-`invalidate_user_video_cache(user_id)` below — call it right after a video
-is successfully ingested (see `video.py`'s `process_video` endpoint) and it
-evicts that user's (and the shared admin) cache entries so their very next
-`/api/videos` request is a real, fresh fetch instead of a stale hit.
-
-`cachetools.TTLCache` is in-process, not shared across replicas — fine here:
-worst case, different workers independently cache the same data for up to
-2 hours, and a cache-invalidation call only clears the entry on the worker
-that handled the invalidation request. Multi-replica deployments that need
-stronger guarantees would want a shared cache (Redis) instead; noted as a
-known limitation rather than solved here.
-"""
 
 from __future__ import annotations
 
@@ -57,21 +21,17 @@ router = APIRouter(prefix="/api", tags=["Videos"])
 DEFAULT_PAGE_SIZE = 10
 MAX_PAGE_SIZE = 50
 
-LIST_CACHE_TTL_SECONDS = 2 * 60 * 60  # 2 hours
-TODAY_COUNT_CACHE_TTL_SECONDS = 5 * 60  # 5 minutes
+LIST_CACHE_TTL_SECONDS = 2 * 60 * 60  
+TODAY_COUNT_CACHE_TTL_SECONDS = 5 * 60  
 
-# --- caches -------------------------------------------------------------------
-# Keyed by "admin" (shared across all admins) or the caller's user_id, so an
-# admin's view never leaks into / gets conflated with a regular user's data.
+
 _video_list_cache: TTLCache = TTLCache(maxsize=2048, ttl=LIST_CACHE_TTL_SECONDS)
 _video_list_lock = threading.Lock()
 
 _today_count_cache: TTLCache = TTLCache(maxsize=512, ttl=TODAY_COUNT_CACHE_TTL_SECONDS)
 _today_count_lock = threading.Lock()
 
-# Backs the "Videos Uploaded" metric card (total + trend % + sparkline). Same
-# 5-minute cadence as the today-count stat — it's a dashboard summary number,
-# not something that needs to be second-fresh.
+
 _upload_metrics_cache: TTLCache = TTLCache(maxsize=512, ttl=TODAY_COUNT_CACHE_TTL_SECONDS)
 _upload_metrics_lock = threading.Lock()
 
@@ -101,8 +61,6 @@ def invalidate_user_video_cache(user_id: str) -> None:
         _upload_metrics_cache.pop(user_id, None)
         _upload_metrics_cache.pop("admin", None)
 
-
-# --- Schemas -----------------------------------------------------------------
 
 class VideoItemResponse(BaseModel):
     id: str
@@ -137,7 +95,6 @@ class VideoUploadMetricsResponse(BaseModel):
     cached: bool
 
 
-# --- Endpoints -----------------------------------------------------------------
 
 @router.get("/videos", response_model=VideoListResponse)
 async def list_videos(
@@ -145,11 +102,7 @@ async def list_videos(
     offset: int = Query(0, ge=0),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ) -> VideoListResponse:
-    """Paginated video list. Admins see every video; users see only their own.
-
-    Cached for 2 hours per (scope, limit, offset) — see the module docstring.
-    A fresh upload bypasses this immediately via `invalidate_user_video_cache`.
-    """
+ 
     cache_key = (_scope_for(auth), limit, offset)
 
     with _video_list_lock:
@@ -189,7 +142,7 @@ async def list_videos(
 async def today_video_count(
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ) -> TodayCountResponse:
-    """Count of videos indexed today (UTC). Cached for 5 minutes per caller scope."""
+   
     cache_key = "admin" if auth.is_admin else auth.user_id
 
     with _today_count_lock:
@@ -214,10 +167,7 @@ async def video_upload_metrics(
     days: int = Query(14, ge=2, le=90),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ) -> VideoUploadMetricsResponse:
-    """Data for the "Videos Uploaded" metric card: total, trend %, and a sparkline.
-
-    Cached for 5 minutes per caller scope, same cadence as `stats/today`.
-    """
+  
     cache_key = _scope_for(auth)
 
     with _upload_metrics_lock:
@@ -256,10 +206,7 @@ def _short_weekday_label(iso_date: str) -> str:
         return iso_date
 
 
-# --- thin async wrappers around the sync store functions ---------------------
-# `video_store.py` is intentionally sync (plain httpx.Client), same as
-# chat_store.py — offloaded to a thread here rather than making the whole
-# store async, to stay consistent with the rest of the codebase.
+
 
 async def run_in_threadpool_fetch_videos(*, user_id: str, is_admin: bool, limit: int, offset: int):
     return await asyncio.to_thread(fetch_videos, user_id=user_id, is_admin=is_admin, limit=limit, offset=offset)

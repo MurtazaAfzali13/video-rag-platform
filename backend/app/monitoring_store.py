@@ -71,7 +71,7 @@ def get_response_time_metrics(
         period, granularity = None, "month"
 
     current_start = now - period if period else None
-    fetch_start = now - (period * 2) if period else None  # هم بازه‌ی فعلی هم بازه‌ی مقایسه
+    fetch_start = now - (period * 2) if period else None 
 
     logger.info(
         "Fetching response-time metrics for user_id=%s, is_admin=%s, timeframe=%s",
