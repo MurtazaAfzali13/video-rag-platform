@@ -32,11 +32,7 @@ from app.config import get_settings
 
 logger = logging.getLogger(__name__)
 
-# auto_error=True (default) already makes FastAPI reject requests with a missing/malformed
-# Authorization header before our code even runs. We keep this, and additionally normalize
-# the status code to 401 everywhere below (FastAPI's default for a missing bearer token is
-# 403, which is technically wrong per HTTP semantics — 401 means "who are you", 403 means
-# "I know who you are and you're not allowed"; a missing token is the former).
+
 security = HTTPBearer(auto_error=True)
 
 
@@ -51,9 +47,6 @@ class AuthenticatedUser(BaseModel):
         return self.role == "admin"
 
 
-# نام‌های متداولی که این فیلد ممکنه در Settings شما داشته باشه، یا در .env ست شده باشه.
-# TEMP FIX: اگر config.py شما این فیلد رو ندارد، همینجا آن را با یکی از نام‌های زیر پیدا
-# می‌کنیم (یا مستقیماً env var را می‌خوانیم)، تا وقتی که config.py را اصلاح کنیم.
 _ISSUER_URL_SETTINGS_ATTRS = (
     "clerk_issuer_url",
     "clerk_frontend_api",
@@ -117,9 +110,9 @@ def get_jwks_client() -> PyJWKClient:
     jwks_url = f"{issuer_url}/.well-known/jwks.json"
     return PyJWKClient(
         jwks_url,
-        cache_keys=True,      # cache individual signing keys by `kid`
-        cache_jwk_set=True,   # cache the whole JWKS response
-        lifespan=3600,        # re-fetch at most once per hour; Clerk rotates keys rarely
+        cache_keys=True,    
+        cache_jwk_set=True,  
+        lifespan=3600,        
     )
 
 
@@ -136,18 +129,12 @@ def _decode_and_verify(token: str) -> dict:
         jwks_client = get_jwks_client()
         signing_key = jwks_client.get_signing_key_from_jwt(token)
     except PyJWKClientError as exc:
-        # Covers: unknown `kid`, JWKS endpoint unreachable, malformed JWKS response, etc.
-        # BUG FIX: the previous code only caught `jwt.InvalidTokenError`, which
-        # `PyJWKClientError` does NOT inherit from — this exact failure mode (e.g. Clerk's
-        # JWKS endpoint being briefly unreachable, or a token referencing a rotated-out key)
-        # was previously an *unhandled* exception, surfacing to the client as a raw 500
-        # Internal Server Error instead of a clean, intentional auth failure.
+     
         logger.warning("JWKS key resolution failed: %s", exc)
         raise HTTPException(status_code=401, detail="امکان تایید هویت وجود ندارد. لطفاً دوباره تلاش کنید.") from exc
     except RuntimeError:
-        # Misconfiguration (missing issuer URL) — let this bubble up as-is with its clear message.
         raise
-    except Exception as exc:  # noqa: BLE001 - last-resort guard around a third-party call
+    except Exception as exc: 
         logger.exception("Unexpected error while resolving JWKS signing key")
         raise HTTPException(status_code=401, detail="خطای غیرمنتظره در احراز هویت.") from exc
 
@@ -155,12 +142,8 @@ def _decode_and_verify(token: str) -> dict:
         payload = jwt.decode(
             token,
             signing_key.key,
-            # Pinning the algorithm is the single most important line in this file — see
-            # module docstring on "alg confusion" attacks.
             algorithms=["RS256"],
             issuer=issuer_url,
-            # Small clock-skew tolerance so a few seconds of drift between this server's
-            # clock and Clerk's doesn't spuriously reject valid, freshly-issued tokens.
             leeway=10,
         )
     except jwt.ExpiredSignatureError as exc:
@@ -190,8 +173,6 @@ async def get_current_user(
 
     user_id = payload.get("sub")
     if not user_id:
-        # A validly-signed token with no `sub` claim should never happen with Clerk, but if
-        # it did, treating it as authenticated would be an identity-less session — refuse it.
         raise HTTPException(status_code=401, detail="ساختار توکن نامعتبر است.")
 
     return user_id
@@ -215,7 +196,6 @@ async def get_current_user_with_role(
 
     role = payload.get("role") or "user"
     if not isinstance(role, str):
-        # Defensive: a malformed/unexpected claim type must never be silently trusted as admin.
         role = "user"
 
     return AuthenticatedUser(user_id=user_id, role=role)

@@ -1,6 +1,6 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { RecentTransactionsTable } from "@/components/dashboard/tables";
-import { TopUsers } from "@/components/dashboard/widgets";
+import { UsersProvider } from "@/context/UsersContext";
+import { UsersView } from "./UsersView";
 
 export const metadata = { title: "Users · VidBrain" };
 
@@ -9,16 +9,11 @@ export default function UsersPage() {
     <DashboardShell
       breadcrumb="Dashboard / Users"
       title="Users"
-      subtitle="Every user on your platform — plans, activity, and billing status."
+      subtitle="Every user on your platform — activity and usage."
     >
-      <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
-        <div className="xl:col-span-2">
-          <RecentTransactionsTable />
-        </div>
-        <div className="xl:col-span-1">
-          <TopUsers />
-        </div>
-      </div>
+      <UsersProvider>
+        <UsersView />
+      </UsersProvider>
     </DashboardShell>
   );
 }

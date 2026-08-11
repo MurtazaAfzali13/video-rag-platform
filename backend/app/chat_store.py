@@ -14,12 +14,7 @@ from app.graph.retry_utils import call_with_retry, HTTP_RETRYABLE_EXCEPTIONS
 
 logger = logging.getLogger(__name__)
 
-# Connect timeout kept short on purpose: if the TLS handshake to Supabase can't
-# complete in ~8s, something is actively wrong (VPN/proxy/AV interception,
-# Supabase cold-start, DNS issue) and we want to fail FAST and retry, instead
-# of hanging for the old flat 30s on every single attempt.
 _TIMEOUT = httpx.Timeout(connect=8.0, read=20.0, write=10.0, pool=5.0)
-
 
 class ChatStoreError(Exception):
     """Raised when Supabase chat operations fail (HTTP error status OR network failure)."""
@@ -30,16 +25,14 @@ def _headers(service_key: str) -> dict[str, str]:
         "apikey": service_key,
         "Authorization": f"Bearer {service_key}",
         "Content-Type": "application/json",
-        "Prefer": "return=representation",
-    }
+        "Prefer": "return=representation", }
 
 
 def _base_url() -> str:
     settings = get_settings()
     if not settings.supabase_url or not settings.supabase_service_role_key:
         raise ChatStoreError(
-            "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."
-        )
+            "Supabase is not configured. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY."  )
     return settings.supabase_url.rstrip("/")
 
 
@@ -49,7 +42,6 @@ def _now_iso() -> str:
 
 def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> httpx.Response:
     """Single choke point for every Supabase HTTP call.
-
     Wraps the call with exponential-backoff retry (via retry_utils) for
     connection-level failures (TLS handshake timeout, DNS, connection reset,
     etc.). If retries are exhausted, raises ChatStoreError explicitly instead
@@ -57,10 +49,8 @@ def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> http
     `except ChatStoreError -> HTTP 503` handling in the routers actually work
     for network failures, not just for Supabase 4xx/5xx responses.
     """
-
     def _do_call() -> httpx.Response:
         return getattr(client, method)(url, **kwargs)
-
     try:
         return call_with_retry(
             _do_call,
@@ -91,7 +81,7 @@ def _ensure_video_exists(video_id: str, user_id: str) -> None:
             client, "get", url, headers=headers, params={"id": f"eq.{video_id}", "select": "id"}
         )
         if check_res.status_code == 200 and check_res.json():
-            return  # ویدیو وجود دارد، نیازی به کار اضافه نیست
+            return 
 
         logger.warning("Video %s not found in 'videos' table. Creating a placeholder to prevent FK error.", video_id)
         placeholder = {
@@ -183,7 +173,7 @@ def create_chat(
     rows = response.json()
     return rows[0] if isinstance(rows, list) and rows else payload
 
-
+# Get a single chat by ID and user_id.
 def get_chat(chat_id: str, user_id: str) -> Optional[dict[str, Any]]:
     """Get a single chat by ID and user_id."""
     with httpx.Client(timeout=_TIMEOUT) as client:
@@ -381,8 +371,7 @@ def update_chat_timeline(
                 json=payload,
             )
     except ChatStoreError as exc:
-        # This field is best-effort (frontend has a client-side fallback), so a
-        # network failure here should never take down video processing overall.
+     
         logger.warning("Failed to persist chat timeline for chat %s (network): %s", chat_id, exc)
         return {"id": chat_id, **payload}
 

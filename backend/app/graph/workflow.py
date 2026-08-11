@@ -102,13 +102,9 @@ if __name__ == "__main__":
     print("Initializing graph...")
     graph = get_agent_graph()
     print("Graph compiled successfully!")
-
-    # === بخش جدید برای چاپ گراف به صورت PNG ===
     try:
-        # دریافت دیتای باینری تصویر با استفاده از Mermaid
         png_data = graph.get_graph().draw_mermaid_png()
         
-        # ذخیره دیتای باینری در یک فایل فیزیکی
         output_file = "agent_architecture.png"
         with open(output_file, "wb") as f:
             f.write(png_data)
