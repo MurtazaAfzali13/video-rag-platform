@@ -21,9 +21,12 @@ import {
 import { motion, AnimatePresence } from "framer-motion";
 import { useVideo } from "@/context/VideoContext";
 import type { Message, Chat } from "@/types";
+import type { PipelineNode } from "@/lib/chat-api";
+import NodeProgressIndicator from "./NodeProgressIndicator";
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import PreflightIndicator from "./PreflightIndicator";
 
 interface Props {
   chatId: string;
@@ -31,15 +34,14 @@ interface Props {
   messages: Message[];
   isLoading: boolean;
   isTyping: boolean;
+  currentNode?: PipelineNode | null;
   onSendMessage: (content: string, type: QuestionType) => void; 
   onRegenerate?: () => void;
   onClearChat?: () => void;
 }
 type QuestionType = "general" | "about_video";
 
-// ==========================================
-// Helper Functions
-// ==========================================
+
 
 function formatTimestamp(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -80,9 +82,7 @@ function formatMessageTime(iso: string): string {
   }
 }
 
-// ==========================================
-// Components
-// ==========================================
+
 
 const TimestampPill = memo(function TimestampPill({
   time,
@@ -125,25 +125,6 @@ const CopyButton = memo(function CopyButton({ text }: { text: string }) {
   );
 });
 
-function LoadingSkeleton() {
-  return (
-    <div className="flex justify-start w-full">
-      <div className="mr-3 mt-1 flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20">
-        <Sparkles className="size-3.5 animate-pulse text-white" />
-      </div>
-      <div className="w-full max-w-md space-y-2.5 rounded-2xl rounded-tl-md border border-white/[0.08] bg-[#101A2E]/80 px-5 py-4 backdrop-blur-[10px]">
-        <div className="h-3 w-4/5 animate-pulse rounded bg-slate-700/60" />
-        <div className="h-3 w-full animate-pulse rounded bg-slate-700/50" />
-        <div className="h-3 w-3/5 animate-pulse rounded bg-slate-700/40" />
-        <div className="flex items-center gap-1.5 pt-1">
-          <div className="size-1.5 animate-bounce rounded-full bg-purple-400" />
-          <div className="size-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:150ms]" />
-          <div className="size-1.5 animate-bounce rounded-full bg-purple-400 [animation-delay:300ms]" />
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const AssistantContent = memo(function AssistantContent({
   content,
@@ -155,22 +136,18 @@ const AssistantContent = memo(function AssistantContent({
   onJumpToTime: (seconds: number) => void;
 }) {
   
-  // سعی می‌کنیم پیام را به عنوان JSON جدید ساختاریافته (از بک‌اند) پارس کنیم
   let parsedContent: any = null;
   const trimmed = content.trim();
   if (trimmed.startsWith("{") && !isStreaming) {
     try {
       parsedContent = JSON.parse(trimmed);
     } catch (e) {
-      // اگر پارس نشد، به حالت متن استاندارد باز می‌گردیم
+  
     }
   }
-
-  // --- حالت ۱: خلاصه ویدیو (Video Summary) ---
   if (parsedContent && (parsedContent.type === 'video_summary' || parsedContent.key_takeaways)) {
     const takeaways = parsedContent.key_takeaways || [];
     
-    // 1. گروه‌بندی Takeawayها بر اساس تایم‌استمپ
     const groupedTakeaways = takeaways.reduce((acc: any, item: any) => {
       const time = item.timestamp || "general";
       if (!acc[time]) acc[time] = [];
@@ -189,19 +166,17 @@ const AssistantContent = memo(function AssistantContent({
           <p className="leading-relaxed text-slate-300">{parsedContent.overall_summary}</p>
         )}
 
-        {/* 2. رندر کردن گروه‌بندی شده */}
         {Object.keys(groupedTakeaways).length > 0 && (
           <div className="mt-2 space-y-4">
             {Object.entries(groupedTakeaways).map(([time, points]: [string, any], i: number) => (
               <div key={i} className="flex flex-col gap-2 rounded-lg bg-white/5 p-3 border border-white/5 relative">
-                {/* نمایش تایم‌استمپ فقط یک بار در بالای گروه (اگر general نبود) */}
+              
                 {time !== "general" && (
                   <div className="absolute -top-3 right-3">
                     <TimestampPill time={time} onClick={onJumpToTime} />
                   </div>
                 )}
                 
-                {/* نمایش لیست نکات مربوط به این زمان */}
                 <ul className={`space-y-1.5 text-slate-300 text-sm leading-relaxed ${time !== "general" ? "mt-3" : ""}`}>
                   {points.map((point: string, idx: number) => (
                     <li key={idx} className="flex gap-2">
@@ -224,7 +199,6 @@ const AssistantContent = memo(function AssistantContent({
     );
   }
 
-  // --- حالت ۲: پاسخ ساختاریافته QA (دارای منابع تفکیک شده ویدیو و وب) ---
   if (parsedContent && parsedContent.type === 'qa_response') {
     return (
       <div className="flex w-full flex-col gap-3 text-sm">
@@ -236,15 +210,7 @@ const AssistantContent = memo(function AssistantContent({
 
         {parsedContent.sources && parsedContent.sources.length > 0 && (
           <div className="mt-2 pt-3 border-t border-slate-700/50">
-            {/*
-              🎯 طراحی عمداً اینجا با VideoTimelinePanel فرق دارد:
-              - داخل ChatInterface (این‌جا): فقط کارت‌های کوچک/pill با زمان (+لینک خارجی
-                برای منابع وب)، بدون عنوان/توضیح — چون این‌جا فقط چت است و باید کم‌حجم
-                و سریع‌اسکن باشد.
-              - داخل VideoTimelinePanel: لیست کامل با آیکون play، زمان، عنوان و توضیح
-                (سرفصل‌های واقعی ویدیو) — که همان‌جا از قبل پیاده‌سازی شده و دست‌نخورده
-                باقی می‌ماند.
-            */}
+           
             <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
               <ArrowUpRight className="size-3" />
               Related timestamps
@@ -290,7 +256,6 @@ const AssistantContent = memo(function AssistantContent({
     );
   }
 
-  // --- حالت ۳: پردازش متن استاندارد / Streaming (Legacy / Fallback) ---
   const timestamps = extractTimestamps(content);
   const cleanContent = removeTimestampsFromText(content);
 
@@ -353,6 +318,7 @@ export default function ChatInterface({
   messages,
   isLoading,
   isTyping,
+  currentNode,
   onSendMessage,
   onRegenerate,
   onClearChat,
@@ -363,13 +329,8 @@ export default function ChatInterface({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
-  // استفاده از کانتکست ویدیو که قبلا پیاده‌سازی کردید
   const { jumpToTime, hydrateFromChat } = useVideo();
 
-  // 💾 بازیابی تایم‌لاین/ترنسکریپت ذخیره‌شده‌ی این چت (از Supabase) داخل VideoContext.
-  // این افکت دقیقاً یک‌بار به‌ازای هر chat.id اجرا می‌شود — نه با هر رندر — چون بعد از
-  // این‌که یک ویدیوی جدید همین حالا پردازش شد (VideoTimelinePanel از قبل state را ست
-  // کرده)، نباید یک fetch/رندر بعدی با همان chat.id دوباره آن را بازنویسی/پاک کند.
   const hydratedChatIdRef = useRef<string | null>(null);
   useEffect(() => {
     if (!chat?.id) return;
@@ -378,7 +339,7 @@ export default function ChatInterface({
     hydrateFromChat(chat as any);
   }, [chat, hydrateFromChat]);
 
-  // Scroll to bottom
+  
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
@@ -467,7 +428,7 @@ export default function ChatInterface({
         </div>
       </div>
 
-      {/* Messages Area */}
+  
       <div className="flex-1 overflow-y-auto px-4 py-6">
         <div className="mx-auto max-w-3xl space-y-6">
           {isLoading && messages.length === 0 ? (
@@ -570,7 +531,12 @@ export default function ChatInterface({
               {/* Typing Indicator */}
               {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                  <LoadingSkeleton />
+                 
+                  {currentNode ? (
+                    <NodeProgressIndicator currentNode={currentNode} />
+                  ) : (
+                    <PreflightIndicator />
+                  )}
                 </motion.div>
               )}
             </AnimatePresence>
@@ -603,7 +569,7 @@ export default function ChatInterface({
             </button>
           </div>
 
-          {/* Mobile action buttons */}
+        
           <div className="mt-2 grid grid-cols-2 gap-2 md:hidden">
             <button
               type="button"

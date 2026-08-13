@@ -4,7 +4,12 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
 import { useChatUserId } from "@/hooks/useChatUserId";
 import { useVideo } from "@/context/VideoContext";
-import { fetchChatMeta, fetchChatMessages, sendChatMessage } from "@/lib/chat-api";
+import {
+  fetchChatMeta,
+  fetchChatMessages,
+  sendChatMessageStream,
+  type PipelineNode,
+} from "@/lib/chat-api";
 import { parseTimestampsFromText, parseTimestampToSeconds } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
 import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
@@ -32,6 +37,9 @@ export default function ChatPage() {
   const [isLoadingChat, setIsLoadingChat] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(false);
+  // 🆕 گره‌ای از پایپ‌لاین LangGraph که همین الان روی بک‌اند در حال اجراست
+  // (برای نمایش زنده در NodeProgressIndicator داخل ChatInterface)
+  const [currentNode, setCurrentNode] = useState<PipelineNode | null>(null);
   
   const messageIdCounter = useRef(0);
   const processingTriggered = useRef(false);
@@ -141,6 +149,7 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsTyping(true);
+      setCurrentNode(null); // 🆕 شروع تازه — هنوز هیچ گره‌ای اجرا نشده
 
       try {
         const token = await getToken();
@@ -151,7 +160,16 @@ export default function ChatPage() {
           return;
         }
 
-        const data = await sendChatMessage(content, token, chatId, chat?.video_id ?? null);
+        
+        const data = await sendChatMessageStream(
+          content,
+          token,
+          chatId,
+          chat?.video_id ?? null,
+          {
+            onProgress: (node) => setCurrentNode(node),
+          }
+        );
 
         const assistantMsg: Message = {
           id: `local-ai-${++messageIdCounter.current}`,
@@ -162,7 +180,7 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // 🆕 تزریق منابع ویدیویی
+    
         try {
           const parsed = JSON.parse(data.response);
           
@@ -201,6 +219,7 @@ export default function ChatPage() {
         alert("خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
       } finally {
         setIsTyping(false);
+        setCurrentNode(null); // 🆕 پایان چرخه — کارت وضعیت گره پاک می‌شود
       }
     },
     // 🔧 فیکس خطا: timelineItems را به وابستگی‌ها اضافه کردیم
@@ -231,6 +250,7 @@ export default function ChatPage() {
           messages={messages}
           isLoading={isLoadingChat}
           isTyping={isTyping}
+          currentNode={currentNode}
           onSendMessage={handleSendMessage}
           onClearChat={handleClearChat}
         />

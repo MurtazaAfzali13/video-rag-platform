@@ -41,13 +41,6 @@ def _scope_for(auth: AuthenticatedUser) -> str:
 
 
 def invalidate_user_video_cache(user_id: str) -> None:
-    """Evict cached list/today-count/metrics entries for one user (and the shared admin view).
-
-    Call this right after a new video is successfully ingested, so the
-    uploader (and any admin dashboard) sees it on their very next request
-    instead of waiting out the cache TTLs. Intentionally does NOT touch
-    other users' cached entries — nobody else's list changed.
-    """
     with _video_list_lock:
         stale_keys = [key for key in list(_video_list_cache.keys()) if key[0] in (user_id, "admin")]
         for key in stale_keys:
@@ -199,7 +192,6 @@ async def video_upload_metrics(
 
 
 def _short_weekday_label(iso_date: str) -> str:
-    """"2026-08-11" -> "Tue" for the sparkline's x-axis-ish labels."""
     try:
         return date.fromisoformat(iso_date).strftime("%a")
     except ValueError:
