@@ -42,7 +42,6 @@ async def workflow_distribution_endpoint(
     timeframe: Timeframe = Query("all", description="بازه‌ی زمانی: today | week | month | all"),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
-    """دریافت دیتای مربوط به چارت دونات برای نمایش توزیع گره‌های لنگ‌گراف، با فیلتر زمانی اختیاری"""
     try:
         raw_data = await asyncio.to_thread(
             get_user_workflow_distribution,

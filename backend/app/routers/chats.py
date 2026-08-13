@@ -378,7 +378,7 @@ async def chat_stream_endpoint(
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",  # disable nginx buffering for real streaming
+            "X-Accel-Buffering": "no",  
             "Connection": "keep-alive",
         },
     )

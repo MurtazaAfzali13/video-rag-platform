@@ -17,9 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 def route_from_supervisor(state: AgentState) -> str:
-    """Read the supervisor's decision from state to route the graph."""
     intent = state.get("next_node")
-
     if intent == "video_summary":
         return "video_summary"
 
@@ -27,9 +25,7 @@ def route_from_supervisor(state: AgentState) -> str:
 
 
 def route_from_validator(state: AgentState) -> str:
-    """Route to generator or web_search based on validator's quality check."""
     decision = state.get("next_node")
-
     if decision == "web_search":
         return "web_search"
 
@@ -48,7 +44,6 @@ def create_agent_graph():
     workflow.add_node("generator", generate_answer_node)
     workflow.add_node("video_summary", video_summary_node)
 
-    # New entry point: every request is history-resolved first.
     workflow.set_entry_point("contextualize")
     workflow.add_edge("contextualize", "supervisor")
 
@@ -61,7 +56,6 @@ def create_agent_graph():
         },
     )
 
-    # retriever -> reranker -> validator (reranker trims noise BEFORE grading)
     workflow.add_edge("retriever", "reranker")
     workflow.add_edge("reranker", "validator")
 

@@ -25,22 +25,14 @@ from app.chat_store import (
 )
 from app.graph.chains import create_chapters_chain
 from app.graph.state import VideoChaptersSchema
-
 from app.auth import get_current_user_with_role, AuthenticatedUser
-
-
 from app.routers.video_route import invalidate_user_video_cache
-
 logger = logging.getLogger(__name__)
-
-
 router = APIRouter(prefix="/api", tags=["Video"])
-
 
 
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
-
     chat_id: str = Field(..., min_length=1, description="Mandatory client-generated UUID for the session")
 
 
@@ -73,16 +65,13 @@ async def process_video(
                 status_code=403,
                 detail=(
                     "شما به سقف مجاز پردازش ویدیو در پلن رایگان (۱ ویدیو) رسیده‌اید. "
-                    "برای پردازش ویدیوهای بیشتر، لطفاً حساب خود را ارتقا دهید."
-                ),
-            )
+                    "برای پردازش ویدیوهای بیشتر، لطفاً حساب خود را ارتقا دهید."),)
 
     video_id = extract_video_id(request.video_url)
     if not video_id:
         raise HTTPException(
             status_code=400,
-            detail="لینک یوتیوب نامعتبر است.",
-        )
+            detail="لینک یوتیوب نامعتبر است.", )
 
     try:
       
