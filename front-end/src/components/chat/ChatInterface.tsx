@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback, memo } from "react";
 import {
+  Menu,
   Send,
   Sparkles,
   Copy,
@@ -20,13 +21,14 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVideo } from "@/context/VideoContext";
+import { useSidebar } from "@/context/SidebarContext";
 import type { Message, Chat } from "@/types";
 import type { PipelineNode } from "@/lib/chat-api";
 import NodeProgressIndicator from "./NodeProgressIndicator";
+import PreflightIndicator from "./PreflightIndicator";
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import PreflightIndicator from "./PreflightIndicator";
 
 interface Props {
   chatId: string;
@@ -124,7 +126,6 @@ const CopyButton = memo(function CopyButton({ text }: { text: string }) {
     </button>
   );
 });
-
 
 const AssistantContent = memo(function AssistantContent({
   content,
@@ -330,6 +331,8 @@ export default function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   const { jumpToTime, hydrateFromChat } = useVideo();
+  // 🆕 دکمه‌ی همبرگر بالای صفحه، دراور سایدبار را باز می‌کند (شبیه ChatGPT)
+  const { toggle: toggleSidebar } = useSidebar();
 
   const hydratedChatIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -381,6 +384,16 @@ export default function ChatInterface({
       <div className="sticky top-0 z-10 flex-shrink-0 border-b border-white/[0.06] bg-[#08101F]/80 px-4 py-3 backdrop-blur-md sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
+            {/* 🆕 دکمه‌ی همبرگر — فقط موبایل، دقیقاً مثل آیکون ChatGPT بالا-چپ */}
+            <button
+              type="button"
+              onClick={toggleSidebar}
+              className="flex size-8 shrink-0 items-center justify-center rounded-lg text-slate-300 transition-colors hover:bg-white/10 hover:text-white md:hidden"
+              aria-label="Open sidebar"
+            >
+              <Menu className="size-5" />
+            </button>
+
             <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/25">
               <Sparkles className="size-3.5 text-white" />
             </div>
@@ -531,7 +544,8 @@ export default function ChatInterface({
               {/* Typing Indicator */}
               {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                 
+                  {/* 🆕 قبل از رسیدن اولین progress event: PreflightIndicator (۴ نقطه‌ی ظریف)
+                      بعد از رسیدن اولین گره: NodeProgressIndicator (وضعیت دقیق گره) */}
                   {currentNode ? (
                     <NodeProgressIndicator currentNode={currentNode} />
                   ) : (

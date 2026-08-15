@@ -1,6 +1,20 @@
 "use client";
 
-
+/**
+ * NodeProgressIndicator
+ * ----------------------
+ * جایگزین LoadingSkeleton برای زمانی که پاسخ دستیار در حال ساخته‌شدن است.
+ * به‌جای یک اسکلتون ژنریک، دقیقاً همان گرهی (node) از پایپ‌لاین LangGraph
+ * که در همین لحظه روی بک‌اند در حال اجراست را با آیکون، رنگ و متن اختصاصی
+ * خودش نمایش می‌دهد و یک "ردِ" کوچک از گره‌های طی‌شده می‌سازد.
+ *
+ * این کامپوننت کاملاً مستقل است و به هیچ فایل دیگری وابسته نیست؛
+ * فقط یک prop به اسم `currentNode` می‌گیرد.
+ *
+ * نام‌های PipelineNode دقیقاً باید با کلیدهای NODE_LABELS_FA در chats.py
+ * (بک‌اند) یکی باشند: contextualize, supervisor, retriever, reranker,
+ * validator, web_search, generator, video_summary
+ */
 
 import { useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
@@ -29,55 +43,55 @@ export type PipelineNode =
 interface NodeMeta {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: string;
-  glow: string; 
+  accent: string; // Tailwind gradient stop classes
+  glow: string; // Tailwind shadow color class
 }
 
 const NODE_META: Record<PipelineNode, NodeMeta> = {
   contextualize: {
-    label: "Understanding conversation context...",
+    label: "در حال درک زمینه‌ی گفت‌وگو…",
     icon: MessagesSquare,
     accent: "from-sky-400 to-blue-600",
     glow: "shadow-blue-500/40",
   },
   supervisor: {
-    label: "Analyzing and routing request...",
+    label: "در حال تحلیل و مسیر‌یابی درخواست…",
     icon: Waypoints,
     accent: "from-fuchsia-400 to-purple-600",
     glow: "shadow-fuchsia-500/40",
   },
   retriever: {
-    label: "Searching video memory...",
+    label: "در حال کاوش در حافظه‌ی ویدیو…",
     icon: SearchCode,
     accent: "from-violet-400 to-indigo-600",
     glow: "shadow-indigo-500/40",
   },
   reranker: {
-    label: "Ranking top findings...",
+    label: "در حال چیدن دقیق‌ترین یافته‌ها…",
     icon: ListFilter,
     accent: "from-purple-400 to-fuchsia-600",
     glow: "shadow-purple-500/40",
   },
   validator: {
-    label: "Validating information...",
+    label: "در حال راستی‌آزمایی اطلاعات…",
     icon: ShieldCheck,
     accent: "from-emerald-400 to-teal-600",
     glow: "shadow-emerald-500/40",
   },
   web_search: {
-    label: "Searching the web...",
+    label: "در حال جست‌وجو در وب…",
     icon: Globe2,
     accent: "from-amber-400 to-orange-600",
     glow: "shadow-amber-500/40",
   },
   generator: {
-    label: "Generating final response...",
+    label: "در حال نگارش پاسخ نهایی…",
     icon: Sparkles,
     accent: "from-purple-400 to-violet-600",
     glow: "shadow-purple-500/40",
   },
   video_summary: {
-    label: "Generating video summary...",
+    label: "در حال تهیه‌ی خلاصه‌ی ویدیو…",
     icon: Film,
     accent: "from-pink-400 to-rose-600",
     glow: "shadow-pink-500/40",
@@ -93,7 +107,8 @@ export function NodeProgressIndicator({
   const lastNode = useRef<PipelineNode | null>(null);
   const prefersReducedMotion = useReducedMotion();
 
-  
+  // هر بار که یک event جدید از SSE می‌رسد، اگر گره تغییر کرده باشد
+  // آن را به ردِّ طی‌شده اضافه می‌کنیم (بدون تکرار).
   useEffect(() => {
     if (!currentNode) {
       setVisited([]);

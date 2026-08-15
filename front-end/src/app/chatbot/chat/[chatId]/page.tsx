@@ -12,7 +12,7 @@ import {
 } from "@/lib/chat-api";
 import { parseTimestampsFromText, parseTimestampToSeconds } from "@/lib/utils";
 import type { Message, Chat } from "@/types";
-import VideoTimelinePanel from "@/components/video/VideoTimelinePanel";
+import VideoTimelinePanel from "@/components/chat/VideoTimelinePanel";
 import ChatInterface from "@/components/chat/ChatInterface";
 
 
@@ -160,7 +160,8 @@ export default function ChatPage() {
           return;
         }
 
-        
+        // 🆕 به‌جای sendChatMessage یک‌جا، از نسخه‌ی استریم‌شده استفاده می‌کنیم
+        // تا روی هر رویداد "progress" گره‌ی فعال آپدیت شود.
         const data = await sendChatMessageStream(
           content,
           token,
@@ -180,7 +181,7 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-    
+        // 🆕 تزریق منابع ویدیویی
         try {
           const parsed = JSON.parse(data.response);
           

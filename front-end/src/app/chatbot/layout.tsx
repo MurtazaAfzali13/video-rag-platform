@@ -1,6 +1,7 @@
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { VideoProvider } from "@/context/VideoContext";
+import { SidebarProvider } from "@/context/SidebarContext";
 import ChatbotShell from "@/components/chat/ChatbotShell";
 
 export default async function ChatbotLayout({
@@ -12,8 +13,10 @@ export default async function ChatbotLayout({
   if (!userId) redirect("/sign-in");
 
   return (
-    <VideoProvider>
-      <ChatbotShell>{children}</ChatbotShell>
-    </VideoProvider>
+    <SidebarProvider>
+      <VideoProvider>
+        <ChatbotShell>{children}</ChatbotShell>
+      </VideoProvider>
+    </SidebarProvider>
   );
 }
