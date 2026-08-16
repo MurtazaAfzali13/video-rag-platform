@@ -83,7 +83,7 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  // 🔑 همون الگوی DashboardContext: ref برای اینکه هویت fetchHealthScore ثابت بمونه
+
   const healthTimeframeRef = useRef(state.healthTimeframe);
   useEffect(() => {
     healthTimeframeRef.current = state.healthTimeframe;

@@ -4,9 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState, type React
 
 export interface UserOverview {
   user_id: string;
-  // 🆕 Resolved via Clerk in /api/users/route.ts — falls back to the raw
-  // user_id (and null email/image_url) if Clerk enrichment fails for any
-  // reason, so this page never breaks even if Clerk is unreachable.
+
   name: string;
   email: string | null;
   image_url: string | null;
@@ -36,9 +34,7 @@ export function UsersProvider({ children }: { children: ReactNode }) {
     setIsLoading(true);
     setError(null);
     try {
-      // No client-side token handling needed: /api/users is a Next.js route
-      // that reads the Clerk session server-side (same pattern as
-      // /api/process-video) and forwards a verified bearer token to FastAPI.
+     
       const res = await fetch("/api/users", { cache: "no-store" });
       const data = await res.json();
 

@@ -29,8 +29,8 @@ export type PipelineNode =
 interface NodeMeta {
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  accent: string;
-  glow: string; 
+  accent: string; // Tailwind gradient stop classes
+  glow: string; // Tailwind shadow color class
 }
 
 const NODE_META: Record<PipelineNode, NodeMeta> = {
@@ -93,7 +93,7 @@ export function NodeProgressIndicator({
   const lastNode = useRef<PipelineNode | null>(null);
   const prefersReducedMotion = useReducedMotion();
 
-  
+
   useEffect(() => {
     if (!currentNode) {
       setVisited([]);
@@ -130,11 +130,10 @@ export function NodeProgressIndicator({
                     initial={{ scale: 0, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     transition={{ type: "spring", stiffness: 380, damping: 22 }}
-                    className={`flex size-5 items-center justify-center rounded-full transition-colors duration-300 ${
-                      isCurrent
-                        ? `bg-gradient-to-br ${NODE_META[node].accent} shadow-sm ${NODE_META[node].glow}`
-                        : "bg-slate-700/50"
-                    }`}
+                    className={`flex size-5 items-center justify-center rounded-full transition-colors duration-300 ${isCurrent
+                      ? `bg-gradient-to-br ${NODE_META[node].accent} shadow-sm ${NODE_META[node].glow}`
+                      : "bg-slate-700/50"
+                      }`}
                   >
                     {isCurrent ? (
                       <NodeIcon className="size-2.5 text-white" />

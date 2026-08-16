@@ -18,6 +18,7 @@ import {
   Hash,
   Maximize2,
   Minimize2,
+  ChevronDown,
 } from "lucide-react";
 import { useVideo } from "@/context/VideoContext";
 import { bindVideoToChat } from "@/lib/chat-api";
@@ -56,6 +57,9 @@ export function VideoTimelinePanel({
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(activeVideoId);
   const [videoTitle, setVideoTitle] = useState("Add a video to get started");
   const [isFullscreen, setIsFullscreen] = useState(false);
+  // 🆕 روی موبایل، بخش Timeline/Highlights به‌صورت پیش‌فرض بسته است؛
+  // فقط با زدن آیکون زیر ویدیو باز می‌شود (دقیقاً طبق درخواست).
+  const [showMobileTimeline, setShowMobileTimeline] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -165,11 +169,14 @@ export function VideoTimelinePanel({
     setActiveTimestampId(item.id);
     const seconds = parseTimestampToSeconds(item.time);
     jumpToTime(seconds);
+   
+    setShowMobileTimeline(false);
   };
 
   const handleTranscriptClick = (line: (typeof transcriptLines)[0]) => {
     const seconds = parseTimestampToSeconds(line.time);
     jumpToTime(seconds);
+    setShowMobileTimeline(false);
   };
 
   const renderEmptyState = () => (
@@ -186,6 +193,8 @@ export function VideoTimelinePanel({
       </p>
     </div>
   );
+
+  const totalHighlightsCount = timelineItems.length + transcriptLines.length;
 
   return (
     <section
@@ -240,6 +249,36 @@ export function VideoTimelinePanel({
               {isFullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
             </button>
           )}
+        </div>
+
+       
+        <div className="mt-3 flex items-center justify-between gap-2 px-4 md:hidden">
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-[13px] font-medium text-slate-300">{videoTitle}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowMobileTimeline((v) => !v)}
+            aria-expanded={showMobileTimeline}
+            aria-label="Toggle chapters and highlights"
+            className={cn(
+              "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95",
+              showMobileTimeline
+                ? "border-purple-500/60 bg-gradient-to-r from-purple-600/30 to-purple-700/20 text-purple-200 shadow-sm shadow-purple-500/20"
+                : "border-white/10 bg-white/5 text-slate-300"
+            )}
+          >
+            <Clock className="size-3.5" />
+            {totalHighlightsCount > 0 && (
+              <span className="tabular-nums">{totalHighlightsCount}</span>
+            )}
+            <ChevronDown
+              className={cn(
+                "size-3.5 transition-transform duration-300",
+                showMobileTimeline && "rotate-180"
+              )}
+            />
+          </button>
         </div>
 
         <div className="mt-4 hidden items-start justify-between gap-3 md:flex">
@@ -318,124 +357,134 @@ export function VideoTimelinePanel({
         )}
       </div>
 
-      <div className="hidden min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 md:flex">
-        <Tabs defaultValue="timeline" className="flex min-h-0 flex-1 flex-col">
-          <TabsList className="w-full shrink-0 bg-[#121626]/60 border border-white/5 rounded-xl p-1 gap-1">
-            <TabsTrigger
-              value="timeline"
-              className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-purple-600/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
-            >
-              <Clock className="size-3.5" />
-              Timeline
-              <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
-                {timelineItems.length}
-              </span>
-            </TabsTrigger>
-            <TabsTrigger
-              value="transcript"
-              className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-purple-600/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
-            >
-              <FileText className="size-3.5" />
-              Highlights
-              <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
-                {transcriptLines.length}
-              </span>
-            </TabsTrigger>
-          </TabsList>
+     
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows,opacity] duration-300 ease-out md:!grid-rows-[1fr] md:!opacity-100 md:flex-1 md:min-h-0",
+          showMobileTimeline ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"
+        )}
+      >
+        <div className="min-h-0 overflow-hidden md:flex md:flex-col">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-1 md:pt-0">
+            <Tabs defaultValue="timeline" className="flex min-h-0 flex-1 flex-col">
+              <TabsList className="w-full shrink-0 bg-[#121626]/60 border border-white/5 rounded-xl p-1 gap-1">
+                <TabsTrigger
+                  value="timeline"
+                  className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-purple-600/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
+                >
+                  <Clock className="size-3.5" />
+                  Timeline
+                  <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
+                    {timelineItems.length}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger
+                  value="transcript"
+                  className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-purple-600/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
+                >
+                  <FileText className="size-3.5" />
+                  Highlights
+                  <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
+                    {transcriptLines.length}
+                  </span>
+                </TabsTrigger>
+              </TabsList>
 
-          <TabsContent
-            value="timeline"
-            className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
-          >
-            {timelineItems.length === 0 ? (
-              renderEmptyState()
-            ) : (
-              <ul className="space-y-1.5 pr-1 pb-4">
-                {timelineItems.map((item) => (
-                  <li key={item.id}>
-                    <button
-                      type="button"
-                      onClick={() => handleTimelineClick(item)}
-                      className={cn(
-                        "group w-full flex items-center gap-4 rounded-xl p-3.5 text-left transition-all duration-200 border",
-                        activeTimestampId === item.id
-                          ? "border-purple-600/70 bg-[#251e3f]/40 shadow-sm"
-                          : "border-transparent hover:bg-white/[0.03]"
-                      )}
-                    >
+              <TabsContent
+                value="timeline"
+                className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
+              >
+                {timelineItems.length === 0 ? (
+                  renderEmptyState()
+                ) : (
+                  <ul className="space-y-1.5 pr-1 pb-4">
+                    {timelineItems.map((item) => (
+                      <li key={item.id}>
+                        <button
+                          type="button"
+                          onClick={() => handleTimelineClick(item)}
+                          className={cn(
+                            "group w-full flex items-center gap-4 rounded-xl p-3.5 text-left transition-all duration-200 border",
+                            activeTimestampId === item.id
+                              ? "border-purple-600/70 bg-[#251e3f]/40 shadow-sm"
+                              : "border-transparent hover:bg-white/[0.03]"
+                          )}
+                        >
+                          <div
+                            className={cn(
+                              "flex size-9 shrink-0 items-center justify-center rounded-full transition-all duration-300",
+                              activeTimestampId === item.id
+                                ? "bg-[#8b5cf6] text-white shadow-md shadow-purple-600/20"
+                                : "bg-[#181a36] text-[#9333ea] group-hover:bg-[#8b5cf6] group-hover:text-white"
+                            )}
+                          >
+                            <Play className={cn(
+                              "size-3.5 fill-current ml-0.5 transition-transform",
+                              activeTimestampId === item.id ? "scale-110" : "group-hover:scale-110"
+                            )} />
+                          </div>
+
+                          <span
+                            className={cn(
+                              "font-mono text-[15px] tabular-nums tracking-wide shrink-0 min-w-[45px] transition-colors",
+                              activeTimestampId === item.id
+                                ? "text-[#a78bfa] font-medium"
+                                : "text-[#8b5cf6] group-hover:text-[#a78bfa]"
+                            )}
+                          >
+                            {item.time}
+                          </span>
+
+                          <div className="flex-1 min-w-0 pr-2">
+                           
+                            <h4 className="text-[14px] font-medium text-slate-200 group-hover:text-white transition-colors line-clamp-1 leading-snug">
+                              {item.title}
+                            </h4>
+
+                            {item.description && (
+                              <p className="text-[13px] text-slate-500 mt-1 line-clamp-1 group-hover:text-slate-400 transition-colors">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </TabsContent>
+
+              <TabsContent
+                value="transcript"
+                className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
+              >
+                {transcriptLines.length === 0 ? (
+                  renderEmptyState()
+                ) : (
+                  <div className="space-y-2 pr-1 pb-4">
+                    {transcriptLines.map((line, idx) => (
                       <div
-                        className={cn(
-                          "flex size-9 shrink-0 items-center justify-center rounded-full transition-all duration-300",
-                          activeTimestampId === item.id
-                            ? "bg-[#8b5cf6] text-white shadow-md shadow-purple-600/20"
-                            : "bg-[#181a36] text-[#9333ea] group-hover:bg-[#8b5cf6] group-hover:text-white"
-                        )}
+                        key={idx}
+                        onClick={() => handleTranscriptClick(line)}
+                        className="group flex gap-4 p-3 rounded-xl transition-all duration-200 hover:bg-purple-600/10 cursor-pointer border border-transparent hover:border-purple-500/20"
                       >
-                        <Play className={cn(
-                          "size-3.5 fill-current ml-0.5 transition-transform",
-                          activeTimestampId === item.id ? "scale-110" : "group-hover:scale-110"
-                        )} />
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Hash className="size-3 text-[#8b5cf6]/60" />
+                          <span className="font-mono text-xs text-[#8b5cf6] tabular-nums font-medium">
+                            {line.time}
+                          </span>
+                        </div>
+                        <p className="text-sm leading-relaxed text-slate-400 group-hover:text-slate-200 transition-colors">
+                          {line.text}
+                        </p>
                       </div>
-
-                      <span
-                        className={cn(
-                          "font-mono text-[15px] tabular-nums tracking-wide shrink-0 min-w-[45px] transition-colors",
-                          activeTimestampId === item.id
-                            ? "text-[#a78bfa] font-medium"
-                            : "text-[#8b5cf6] group-hover:text-[#a78bfa]"
-                        )}
-                      >
-                        {item.time}
-                      </span>
-
-                      <div className="flex-1 min-w-0 pr-2">
-                       
-                        <h4 className="text-[14px] font-medium text-slate-200 group-hover:text-white transition-colors line-clamp-1 leading-snug">
-                          {item.title}
-                        </h4>
-
-                        {item.description && (
-                          <p className="text-[13px] text-slate-500 mt-1 line-clamp-1 group-hover:text-slate-400 transition-colors">
-                            {item.description}
-                          </p>
-                        )}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </TabsContent>
-
-          <TabsContent
-            value="transcript"
-            className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
-          >
-            {transcriptLines.length === 0 ? (
-              renderEmptyState()
-            ) : (
-              <div className="space-y-2 pr-1 pb-4">
-                {transcriptLines.map((line, idx) => (
-                  <div
-                    key={idx}
-                    onClick={() => handleTranscriptClick(line)}
-                    className="group flex gap-4 p-3 rounded-xl transition-all duration-200 hover:bg-purple-600/10 cursor-pointer border border-transparent hover:border-purple-500/20"
-                  >
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <Hash className="size-3 text-[#8b5cf6]/60" />
-                      <span className="font-mono text-xs text-[#8b5cf6] tabular-nums font-medium">
-                        {line.time}
-                      </span>
-                    </div>
-                    <p className="text-sm leading-relaxed text-slate-400 group-hover:text-slate-200 transition-colors">
-                      {line.text}
-                    </p>
+                    ))}
                   </div>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-        </Tabs>
+                )}
+              </TabsContent>
+            </Tabs>
+          </div>
+        </div>
       </div>
 
       <style jsx>{`

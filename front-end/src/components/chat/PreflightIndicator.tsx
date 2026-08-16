@@ -1,7 +1,6 @@
 "use client";
 
 
-
 import { motion, useReducedMotion } from "framer-motion";
 import { Sparkles } from "lucide-react";
 

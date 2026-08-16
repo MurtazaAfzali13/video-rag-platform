@@ -163,8 +163,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
-  // 🔑 این دو ref همیشه آخرین تایم‌فریم رو نگه می‌دارن، بدون این‌که توی dependency
-  // آرایه‌ی useCallback قرار بگیرن — پس هویت (reference) خود تابع هیچ‌وقت عوض نمی‌شه.
+  
   const workflowTimeframeRef = useRef(state.workflowTimeframe);
   const questionsTimeframeRef = useRef(state.questionsTimeframe);
 
@@ -196,7 +195,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "FETCH_FAILURE", payload: message });
       }
     },
-    [baseUrl, getToken] // 🔑 دیگه به state.workflowTimeframe وابسته نیست → هویت ثابت
+    [baseUrl, getToken] 
   );
 
   const fetchMetrics = useCallback(async () => {
@@ -238,13 +237,10 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
         dispatch({ type: "FETCH_QUESTIONS_FAILURE", payload: message });
       }
     },
-    [baseUrl, getToken] // 🔑 دیگه به state.questionsTimeframe وابسته نیست → هویت ثابت
+    [baseUrl, getToken] 
   );
 
-  // 🆕 دقیقاً هم‌الگوی fetchQuestionsMetrics — بدون timeframe چون
-  // GET /api/videos/stats/metrics فقط یک پارامتر ثابت `days` دارد (پیش‌فرض ۱۴
-  // روز، سمت بک‌اند). اگر بعداً خواستید timeframe هم اضافه کنید، همین الگوی
-  // ref-based بالا را کپی کنید تا هویت تابع ثابت بماند.
+ 
   const fetchVideoMetrics = useCallback(async () => {
     dispatch({ type: "FETCH_VIDEO_METRICS_START" });
     try {
