@@ -6,22 +6,12 @@ import ChatSidebar from "@/components/chat/ChatSidebar";
 import { useSidebar } from "@/context/SidebarContext";
 
 export default function ChatbotShell({ children }: { children: React.ReactNode }) {
-  // 🔧 قبلاً اینجا یک useState محلی جدا بود که فقط خودِ ChatbotShell می‌دیدش.
-  // حالا از SidebarContext مشترک استفاده می‌کنیم تا هم این drawer، هم دکمه‌ی
-  // همبرگر داخل ChatInterface (بالای صفحه‌ی چت) دقیقاً یک state را کنترل کنند.
+
   const { isOpen, close } = useSidebar();
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-[#050816]">
-      {/*
-        🔧 نوار بالای مخصوص موبایل («VideoGPT» + همبرگر) از اینجا حذف شد.
-        دلیل: الان ChatInterface خودش یک هدر با دکمه‌ی همبرگر دارد (دقیقاً بالای
-        بخش چت) و طبق عکس مرجع، نباید یک نوار برند اضافه‌ی جدا بالای همه‌چیز
-        باشد — ویدیو باید مستقیماً بالاترین چیز روی صفحه باشد.
-        اگر بعداً به یک برند/هدر سراسری روی موبایل نیاز داشتی، به‌جای برگردوندن
-        این بلوک بهتر است به لوگوی داخل خودِ ChatSidebar (که هر بار drawer باز
-        می‌شود دیده می‌شود) تکیه کنی.
-      */}
+    
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Desktop sidebar — persistent */}

@@ -31,10 +31,7 @@ interface VideoContextType {
   activeTimestampId: string | null;
   setActiveTimestampId: (id: string | null) => void;
   clearTimeline: () => void;
-  /**
-   * دیتای واقعی و ذخیره‌شده‌ی یک چت (که از بک‌اند/Supabase می‌آید) را داخل کانتکست
-   * می‌ریزد. این باید همیشه بر روی هر بازسازی محلی/fallback اولویت داشته باشد.
-   */
+
   hydrateFromChat: (
     chat:
       | {

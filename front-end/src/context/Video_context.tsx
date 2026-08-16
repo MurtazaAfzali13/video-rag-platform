@@ -7,39 +7,12 @@ import { useAuth } from "@clerk/nextjs";
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 export const VIDEOS_PAGE_SIZE = 10;
 
-/**
- * The video list is effectively static data (YouTube thumbnails don't
- * change, and a new video appearing isn't urgent) — so instead of
- * refetching on every mount/navigation, we only auto-refresh every 2 hours.
- *
- * Two SWR settings do the actual work, and both matter:
- * - `dedupingInterval`: within this window, re-mounting the hook (switching
- *   pages and coming back, re-rendering, etc.) reuses the in-memory cache
- *   instead of firing a new request at all.
- * - `refreshInterval`: while a <VideoProvider> stays mounted (e.g. the user
- *   leaves the dashboard tab open), SWR still proactively re-checks on this
- *   cadence so newly added videos eventually show up without a manual reload.
- *
- * Caveat worth knowing: this only holds within one browser session/tab. A
- * hard page reload (F5, closing and reopening the tab) starts a fresh SWR
- * instance, so it always does one real fetch on load — that's just normal
- * page-load behavior and is cheap (one request). The `localStorageProvider`
- * below softens that case too: it shows the last-known thumbnails instantly
- * instead of a loading skeleton while that one fetch resolves in the
- * background.
- */
 const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
 const LOCAL_CACHE_STORAGE_KEY = "video-dashboard-swr-cache-v1";
 
-/**
- * Persists the SWR cache to localStorage so a hard page reload can paint
- * previously-seen thumbnails immediately instead of a blank loading state.
- * Scoped to this context only (via the nested <SWRConfig> below), so it
- * never touches the cache used by MonitoringContext or other dashboard data.
- */
+
 function localStorageProvider(): Cache {
   if (typeof window === "undefined") {
-    // SSR / no browser storage available — plain in-memory map for this render.
     return new Map();
   }
 
@@ -57,8 +30,7 @@ function localStorageProvider(): Cache {
     try {
       localStorage.setItem(LOCAL_CACHE_STORAGE_KEY, JSON.stringify(Array.from((map as Map<string, unknown>).entries())));
     } catch {
-      // Storage full/unavailable (e.g. private browsing) — safe to skip;
-      // SWR keeps working in-memory for the rest of this session.
+    
     }
   });
 
@@ -109,8 +81,7 @@ interface VideoContextValue {
 
 const VideoContext = createContext<VideoContextValue | undefined>(undefined);
 
-/** Attaches the caller's Clerk session token; matches how other dashboard
- * contexts in this app (e.g. MonitoringContext) authenticate requests. */
+
 function useAuthedFetcher() {
   const { getToken } = useAuth();
 
@@ -197,9 +168,7 @@ function VideoProviderInner({ children }: { children: ReactNode }) {
 }
 
 export function VideoProvider({ children }: { children: ReactNode }) {
-  // Nested SWRConfig scopes both the localStorage-backed cache and the
-  // provider itself to just this subtree — it does not affect SWR usage
-  // anywhere else in the dashboard (MonitoringContext, DashboardContext, ...).
+
   return (
     <SWRConfig value={{ provider: localStorageProvider }}>
       <VideoProviderInner>{children}</VideoProviderInner>

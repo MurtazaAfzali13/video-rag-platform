@@ -157,13 +157,16 @@ const loadChats = useCallback(async () => {
               <Youtube className="size-4 text-white" />
             </div>
           </div>
+          <Link href="/">
           <span className="text-sm font-bold text-white tracking-tight">VideoGPT</span>
+          </Link>
         </Link>
 
+  
         <button
           onClick={handleNewChat}
           disabled={isCreating}
-          className="flex items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-purple-600/20 transition-all duration-200 group md:hidden"
+          className="hidden items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-purple-600/20 transition-all duration-200 group md:flex"
           title="New Chat"
         >
           {isCreating ? (

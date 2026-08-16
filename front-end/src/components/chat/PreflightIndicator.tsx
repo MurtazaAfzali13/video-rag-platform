@@ -1,17 +1,5 @@
 "use client";
 
-/**
- * PreflightIndicator
- * -------------------
- * جایگزین ظریف‌تر LoadingSkeleton قدیمی، برای همان چند صدم ثانیه‌ی کوتاهی که
- * بین ارسال پیام و رسیدن اولین رویداد "progress" از SSE فاصله می‌افتد
- * (یعنی هنوز مشخص نیست کدام گره از LangGraph شروع به کار می‌کند).
- *
- * به‌جای اسکلتون بزرگ با خط‌های جعلی متن، فقط ۴ نقطه‌ی گرادیانت با یک
- * موج نرم و هم‌راستا با پالت بنفش پروژه نمایش داده می‌شود — سبک‌تر، شیک‌تر
- * و کمتر شلوغ، بلافاصله بعد از اولین progress event با NodeProgressIndicator
- * جایگزین می‌شود.
- */
 
 import { motion, useReducedMotion } from "framer-motion";
 import { Sparkles } from "lucide-react";
@@ -53,7 +41,7 @@ export function PreflightIndicator() {
         </div>
 
         <span className="text-[11px] text-slate-400 tracking-wide">
-          در حال آماده‌سازی پاسخ…
+        Preparing the response...
         </span>
       </div>
     </div>

@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Youtube, ArrowRight, Sparkles, Link2 } from "lucide-react";
+import { Youtube, ArrowRight, Sparkles, Link2, Menu } from "lucide-react";
 import { v4 as uuidv4 } from "uuid";
+import { useSidebar } from "@/context/SidebarContext";
 
 export default function ChatbotHomePage() {
   const [url, setUrl] = useState("");
   const router = useRouter();
+  const { toggle: toggleSidebar } = useSidebar();
 
   const handleStart = (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,6 +21,16 @@ export default function ChatbotHomePage() {
 
   return (
     <div className="relative flex h-full flex-1 flex-col items-center justify-center overflow-hidden bg-[#050816] px-4 py-8 sm:px-6">
+    
+      <button
+        type="button"
+        onClick={toggleSidebar}
+        className="absolute left-4 top-4 z-20 flex size-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-slate-300 transition-colors hover:border-purple-500/40 hover:bg-white/10 hover:text-white md:hidden"
+        aria-label="Open chat history"
+      >
+        <Menu className="size-5" />
+      </button>
+
       <div className="pointer-events-none absolute top-1/4 left-1/2 h-[280px] w-[280px] -translate-x-1/2 rounded-full bg-purple-600/5 blur-[80px] sm:h-[600px] sm:w-[600px] sm:blur-[120px]" />
       <div className="pointer-events-none absolute bottom-1/4 left-1/3 h-[200px] w-[200px] rounded-full bg-blue-600/5 blur-[60px] sm:h-[400px] sm:w-[400px] sm:blur-[100px]" />
 
