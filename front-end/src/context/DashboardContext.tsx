@@ -40,8 +40,7 @@ export interface QuestionsMetricsData {
   chart_data: QuestionsChartPoint[];
 }
 
-// 🆕 داده‌ی کارت "Videos Uploaded" — همان شکل QuestionsMetricsData را دنبال می‌کند
-// چون MetricsGrid همان الگوی { value, change, trend, chart_data } را انتظار دارد.
+
 export interface VideoChartPoint {
   label: string;
   value: number;

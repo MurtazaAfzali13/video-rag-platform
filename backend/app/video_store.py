@@ -1,15 +1,4 @@
-"""Supabase-backed video store (backend-only).
 
-Calls the two RPCs defined in `sql/video_rpcs.sql` (`get_youtube_videos`,
-`get_today_video_count`) instead of hand-building PostgREST filter strings —
-RBAC (admin vs. own-videos-only) is enforced inside the RPC by the
-`p_is_admin` / `p_user_id` arguments, which the router derives from the
-verified Clerk JWT and never from anything the client sends directly.
-
-Mirrors `chat_store.py`'s conventions on purpose (same retrying `_request`
-choke point, same "raise a clear domain error instead of letting a raw httpx
-exception escape" pattern) so this file reads like it belongs next to it.
-"""
 
 from __future__ import annotations
 
@@ -108,12 +97,7 @@ def fetch_videos(
     limit: int = 10,
     offset: int = 0,
 ) -> VideoPage:
-    """Fetch one page of videos, RBAC-scoped.
-
-    Admins (`is_admin=True`) see every video in the workspace; regular users
-    only ever see rows where `videos.user_id == user_id` — that filter is
-    applied server-side inside the `get_youtube_videos` RPC, not here.
-    """
+  
     response = _call_rpc(
         "get_youtube_videos",
         {
@@ -167,15 +151,7 @@ class UploadMetrics(NamedTuple):
 
 
 def fetch_upload_metrics(*, user_id: str, is_admin: bool, days: int = 14) -> UploadMetrics:
-    """Data behind the "Videos Uploaded" metric card: total, trend %, and a sparkline.
-
-    Trend is computed by comparing the two halves of the `days` window (e.g. the
-    most recent 7 days vs. the 7 days before that for the default `days=14`) —
-    the same "recent period vs. prior period" idea as the existing
-    `questions-today` metric, just derived client-side from daily counts instead
-    of a dedicated RPC field, since we already need the daily breakdown for the
-    sparkline anyway.
-    """
+   
     daily_response = _call_rpc(
         "get_video_upload_daily_counts",
         {"p_user_id": user_id, "p_is_admin": is_admin, "p_days": days},
@@ -183,9 +159,6 @@ def fetch_upload_metrics(*, user_id: str, is_admin: bool, days: int = 14) -> Upl
     daily_rows: list[dict[str, Any]] = daily_response.json()
     daily_counts = [DailyUploadCount(day=row["day"], count=row["count"]) for row in daily_rows]
 
-    # Total in the library (all-time, not just the sparkline window) — reuses
-    # the paginated list RPC's window-function total_count via a 1-row fetch,
-    # rather than adding yet another RPC just to count all rows.
     total_page = fetch_videos(user_id=user_id, is_admin=is_admin, limit=1, offset=0)
     total = total_page.total_count
 

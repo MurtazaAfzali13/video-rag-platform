@@ -10,7 +10,7 @@ import { salesOverview as defaultSalesOverview } from "@/mock/dashboard";
 import { useDashboard, type QuestionsTimeframe } from "@/context/DashboardContext";
 import type { ChartPoint } from "@/types/dashboard";
 
-// 🆕 تغییر نام لیبل‌ها برای زیبایی بیشتر در دکمه‌های کپسولی
+
 const TIMEFRAME_OPTIONS: { value: QuestionsTimeframe; label: string }[] = [
   { value: "today", label: "Today" },
   { value: "week", label: "Week" },
@@ -18,7 +18,7 @@ const TIMEFRAME_OPTIONS: { value: QuestionsTimeframe; label: string }[] = [
   { value: "all", label: "All" },
 ];
 
-// 🆕 کامپوننت جدید دکمه‌های کپسولی (مشابه چارت دونات)
+
 function QuestionsTimeframeToggle({
   value,
   onChange,
@@ -74,15 +74,28 @@ export function SalesOverviewChart() {
   const { state, fetchQuestionsMetrics } = useDashboard();
   const { questionsMetrics, questionsTimeframe, isQuestionsLoading } = state;
 
-  const chartData = useMemo<ChartPoint[]>(() => {
+ const chartData = useMemo<ChartPoint[]>(() => {
     if (questionsMetrics?.chart_data?.length) {
-      return questionsMetrics.chart_data.map((point) => ({
-        label: point.label,
-        value: point.value,
-      }));
+      return questionsMetrics.chart_data.map((point) => {
+        let displayLabel = point.label;
+        
+        if (questionsTimeframe === "today") {
+          try {
+             const date = new Date(`1970-01-01T${point.label}:00Z`); 
+             displayLabel = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          } catch (e) {
+             displayLabel = point.label;
+          }
+        }
+
+        return {
+          label: displayLabel,
+          value: point.value,
+        };
+      });
     }
     return defaultSalesOverview;
-  }, [questionsMetrics]);
+  }, [questionsMetrics, questionsTimeframe]);
 
   return (
     <Card
@@ -90,7 +103,6 @@ export function SalesOverviewChart() {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.4, delay: 0.1 }}
     >
-      {/* 🆕 تنظیم لایه هدر دقیقا مشابه چارت دونات تا دکمه‌ها در پهلوی هم قرار بگیرند */}
       <div className="flex items-start justify-between gap-3 p-5 pb-0">
         <SectionTitle
           title="Questions Overview"
