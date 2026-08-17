@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import logging
@@ -49,14 +47,7 @@ def _base_url() -> str:
 
 
 def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> httpx.Response:
-    """Single choke point for every Supabase HTTP call, with retry on network failures.
-
-    Same wrapper as chat_store.py's `_request`: retries transient connection-level
-    failures with exponential backoff, and converts anything that survives the
-    retries into a `VideoStoreError` so routers only ever have to handle one
-    exception type (-> HTTP 503) instead of raw httpx exceptions.
-    """
-
+   
     def _do_call() -> httpx.Response:
         return getattr(client, method)(url, **kwargs)
 
@@ -123,13 +114,12 @@ def fetch_videos(
 
 
 def fetch_today_count(*, user_id: str, is_admin: bool) -> int:
-    """Fetch how many videos were indexed today (UTC), RBAC-scoped."""
+    """Fetch how many videos"""
     response = _call_rpc(
         "get_today_video_count",
         {"p_user_id": user_id, "p_is_admin": is_admin},
     )
     result = response.json()
-    # PostgREST returns a scalar RPC result as a bare JSON number.
     if isinstance(result, (int, float)):
         return int(result)
     if isinstance(result, list) and result:
@@ -139,8 +129,8 @@ def fetch_today_count(*, user_id: str, is_admin: bool) -> int:
 
 
 class DailyUploadCount(NamedTuple):
-    day: str  # ISO date, e.g. "2026-08-11"
-    count: int
+    day: str 
+    video_count: int 
 
 
 class UploadMetrics(NamedTuple):
@@ -157,19 +147,21 @@ def fetch_upload_metrics(*, user_id: str, is_admin: bool, days: int = 14) -> Upl
         {"p_user_id": user_id, "p_is_admin": is_admin, "p_days": days},
     )
     daily_rows: list[dict[str, Any]] = daily_response.json()
-    daily_counts = [DailyUploadCount(day=row["day"], count=row["count"]) for row in daily_rows]
+    
+    daily_counts = [DailyUploadCount(day=row["day"], video_count=row["count"]) for row in daily_rows]
 
     total_page = fetch_videos(user_id=user_id, is_admin=is_admin, limit=1, offset=0)
     total = total_page.total_count
 
     midpoint = len(daily_counts) // 2
-    previous_period_count = sum(entry.count for entry in daily_counts[:midpoint])
-    recent_period_count = sum(entry.count for entry in daily_counts[midpoint:])
+    
+    previous_period_count = sum(entry.video_count for entry in daily_counts[:midpoint])
+    recent_period_count = sum(entry.video_count for entry in daily_counts[midpoint:])
 
     if previous_period_count > 0:
         percentage_change = ((recent_period_count - previous_period_count) / previous_period_count) * 100
     elif recent_period_count > 0:
-        percentage_change = 100.0  # went from 0 -> something: treat as a full swing up
+        percentage_change = 100.0  
     else:
         percentage_change = 0.0
 

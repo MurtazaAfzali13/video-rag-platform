@@ -1,5 +1,3 @@
-
-
 from __future__ import annotations
 
 import logging
@@ -54,7 +52,6 @@ def get_response_time_metrics(
     is_admin: bool = False,
     timeframe: str = "week",
 ) -> dict[str, Any]:
-    """میانگین زمان پاسخ (ثانیه) برای KPI و چارت Response Time، بر اساس جدول traces."""
     if timeframe not in _VALID_TIMEFRAMES:
         timeframe = "week"
 
@@ -86,7 +83,6 @@ def get_response_time_metrics(
             if fetch_start is not None:
                 base_params["created_at"] = f"gte.{fetch_start.isoformat()}"
 
-            # ---------- همون الگوی RBAC که در dashboard_store.py هست ----------
             if is_admin:
                 traces_res = client.get(traces_url, headers=headers, params=base_params)
             else:
@@ -127,15 +123,14 @@ def get_response_time_metrics(
             if not rows:
                 return _empty_response_time_metrics(timeframe, now)
 
-            # ---------- ساخت باکت‌های چارت (میانگین هر باکت) ----------
             if granularity == "hour":
                 assert current_start is not None
                 buckets = _build_hour_buckets(current_start, now)
                 grouped: dict[datetime, list[float]] = {}
                 for ts, secs in rows:
                     if ts >= current_start:
-                        key = _floor_to_hour(ts)
-                        grouped.setdefault(key, []).append(secs)
+                        hour_key = _floor_to_hour(ts) # اصلاح نام متغیر
+                        grouped.setdefault(hour_key, []).append(secs)
                 chart_data = [
                     {"label": b.strftime("%H:%M"), "value": round(sum(v) / len(v), 2) if (v := grouped.get(b)) else 0.0}
                     for b in buckets
@@ -147,8 +142,8 @@ def get_response_time_metrics(
                 grouped_d: dict[date, list[float]] = {}
                 for ts, secs in rows:
                     if ts >= current_start:
-                        key = ts.date()
-                        grouped_d.setdefault(key, []).append(secs)
+                        day_key = ts.date() # اصلاح نام متغیر
+                        grouped_d.setdefault(day_key, []).append(secs)
                 chart_data = [
                     {"label": _format_chart_label(b), "value": round(sum(v) / len(v), 2) if (v := grouped_d.get(b)) else 0.0}
                     for b in buckets_d
@@ -159,14 +154,13 @@ def get_response_time_metrics(
                 buckets_m = _build_month_buckets(start_date, now.date())
                 grouped_m: dict[date, list[float]] = {}
                 for ts, secs in rows:
-                    key = _month_start(ts.date())
-                    grouped_m.setdefault(key, []).append(secs)
+                    month_key = _month_start(ts.date()) # اصلاح نام متغیر
+                    grouped_m.setdefault(month_key, []).append(secs)
                 chart_data = [
                     {"label": b.strftime("%b"), "value": round(sum(v) / len(v), 2) if (v := grouped_m.get(b)) else 0.0}
                     for b in buckets_m
                 ]
 
-            # ---------- avg فعلی/قبلی + percentage_change ----------
             if granularity == "month":
                 this_month = _month_start(now.date())
                 last_month = (
@@ -187,10 +181,8 @@ def get_response_time_metrics(
             if avg_previous > 0:
                 percentage_change = round(((avg_current - avg_previous) / avg_previous) * 100, 1)
             else:
-                # بدون داده‌ی مقایسه‌ای معتبر از دوره‌ی قبل، ادعای درصد نمی‌کنیم
                 percentage_change = 0.0
 
-            # برای latency برخلاف questions_metrics، پایین‌تر = بهتر
             trend = "down" if avg_current <= avg_previous else "up"
 
             logger.info(
@@ -228,7 +220,6 @@ def _pct(numerator: int, denominator: int) -> float:
 
 
 def _compute_health_snapshot(traces: list[dict[str, Any]]) -> dict[str, float]:
-    """چهار درصد خام را از یک لیست traces (یک بازه‌ی زمانی) حساب می‌کند."""
     qa_traces = [t for t in traces if t.get("workflow") != "video_summary"]
     qa_total = len(qa_traces)
 
@@ -251,7 +242,6 @@ def _compute_health_snapshot(traces: list[dict[str, Any]]) -> dict[str, float]:
 
 
 def _trend_and_tone(change: float, higher_is_better: bool) -> tuple[str, str]:
-    """جهت فلش (بر اساس تغییر واقعی) و رنگ (بر اساس اینکه این تغییر خوب است یا بد)."""
     trend = "up" if change >= 0 else "down"
     if higher_is_better:
         tone = "positive" if change >= 0 else "negative"
@@ -291,12 +281,7 @@ def get_ai_health_score(
     is_admin: bool = False,
     timeframe: str = "week",
 ) -> dict[str, Any]:
-    """امتیاز سلامت پایپ‌لاین CRAG + زیرمتریک‌ها، بر اساس جدول traces.
-
-    Retrieval/Validation/Retry فقط روی traces غیر video_summary حساب می‌شوند.
-    Error Rate روی همه‌ی traces حساب می‌شود. Hallucination Rate فعلاً هیچ منبع
-    دیتایی ندارد و صادقانه available=False برمی‌گردد (به‌جای عدد ساختگی).
-    """
+   
     if timeframe not in _VALID_TIMEFRAMES:
         timeframe = "week"
 
@@ -328,7 +313,6 @@ def get_ai_health_score(
             if fetch_start is not None:
                 base_params["created_at"] = f"gte.{fetch_start.isoformat()}"
 
-            # ---------- همون الگوی RBAC که در dashboard_store.py هست ----------
             if is_admin:
                 traces_res = client.get(traces_url, headers=headers, params=base_params)
             else:
@@ -369,7 +353,6 @@ def get_ai_health_score(
                     else None
                 )
 
-            # ---------- تقسیم به بازه‌ی فعلی / قبلی ----------
             if timeframe == "all":
                 this_month = _month_start(now.date())
                 last_month = (
@@ -379,7 +362,7 @@ def get_ai_health_score(
                 )
                 current_traces = [t for t in all_traces if t["_ts"] and _month_start(t["_ts"].date()) == this_month]
                 previous_traces = [t for t in all_traces if t["_ts"] and _month_start(t["_ts"].date()) == last_month]
-                # برای "all"، امتیاز نهایی روی کل تاریخچه حساب می‌شود، نه فقط ماه جاری
+                
                 score_source_traces = all_traces
             else:
                 assert current_start is not None and fetch_start is not None
@@ -390,9 +373,9 @@ def get_ai_health_score(
             current_snap = _compute_health_snapshot(score_source_traces or current_traces)
             previous_snap = _compute_health_snapshot(previous_traces)
 
-            def build_metric(id_: str, label: str, key: str, higher_is_better: bool) -> dict[str, Any]:
-                value = current_snap[key]
-                change = round(value - previous_snap[key], 1) if previous_traces else 0.0
+            def build_metric(id_: str, label: str, dict_key: str, higher_is_better: bool) -> dict[str, Any]:
+                value = current_snap[dict_key]
+                change = round(value - previous_snap[dict_key], 1) if previous_traces else 0.0
                 trend, tone = _trend_and_tone(change, higher_is_better)
                 return {
                     "id": id_,
