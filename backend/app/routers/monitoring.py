@@ -1,14 +1,14 @@
-
-
 import asyncio
-from typing import List, Literal
+import threading
+from datetime import datetime, timezone
+from typing import Any, List, Literal, Optional
 
+from cachetools import TTLCache
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from typing import Optional
-
 from app.monitoring_store import get_response_time_metrics, get_ai_health_score
+from app.system_status_store import ALL_CHECKS, ServiceCheckResult
 from app.chat_store import ChatStoreError
 from app.auth import get_current_user_with_role, AuthenticatedUser
 
@@ -83,3 +83,81 @@ async def health_score_endpoint(
         ) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+_SYSTEM_STATUS_CACHE_TTL_SECONDS = 30
+_system_status_cache: TTLCache = TTLCache(maxsize=1, ttl=_SYSTEM_STATUS_CACHE_TTL_SECONDS)
+_system_status_lock = threading.Lock()
+_SYSTEM_STATUS_CACHE_KEY = "system-status"
+
+
+class ServiceStatusSchema(BaseModel):
+    id: str
+    name: str
+    status: Literal["healthy", "warning", "offline"]
+    latency_ms: Optional[int] = None
+    detail: Optional[str] = None
+
+
+class SystemStatusResponse(BaseModel):
+    services: List[ServiceStatusSchema]
+    checked_at: str
+    cached: bool
+
+
+async def _run_all_checks() -> list[ServiceCheckResult]:
+    return await asyncio.gather(*(asyncio.to_thread(check) for check in ALL_CHECKS))
+
+@router.get("/system-status", response_model=SystemStatusResponse)
+async def system_status_endpoint(
+    auth: AuthenticatedUser = Depends(get_current_user_with_role),
+):
+    with _system_status_lock:
+        # نوع‌دهی صریح به کش برای رفع خطای Mypy
+        cached: dict[str, Any] | None = _system_status_cache.get(_SYSTEM_STATUS_CACHE_KEY)
+        
+    if cached is not None:
+        # پاس دادن متغیرها به صورت صریح
+        return SystemStatusResponse(
+            services=cached["services"],
+            checked_at=cached["checked_at"],
+            cached=True
+        )
+
+    results = await _run_all_checks()
+    checked_at_str = datetime.now(timezone.utc).isoformat()
+    
+    services_list = [
+        ServiceStatusSchema(
+            id=r.id,
+            name=r.name,
+            status=r.status,
+            latency_ms=r.latency_ms,
+            detail=r.detail,
+        )
+        for r in results
+    ]
+
+    cache_payload: dict[str, Any] = {
+        "services": [
+            {
+                "id": r.id,
+                "name": r.name,
+                "status": r.status,
+                "latency_ms": r.latency_ms,
+                "detail": r.detail,
+            }
+            for r in results
+        ],
+        "checked_at": checked_at_str,
+    }
+
+    with _system_status_lock:
+        _system_status_cache[_SYSTEM_STATUS_CACHE_KEY] = cache_payload
+
+    # ۳. برگرداندن شیء صریح بدون استفاده از **
+    return SystemStatusResponse(
+        services=services_list,
+        checked_at=checked_at_str,
+        cached=False
+    )
