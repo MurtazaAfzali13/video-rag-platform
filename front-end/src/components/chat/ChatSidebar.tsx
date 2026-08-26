@@ -50,7 +50,7 @@ function groupChatsByDate(chats: Chat[]) {
 export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
   const router = useRouter();
-  
+
   const { user } = useUser();
   const { signOut } = useClerk();
   const { getToken, isLoaded, isSignedIn } = useAuth();
@@ -67,7 +67,7 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
     chatsLengthRef.current = chats.length;
   }, [chats.length]);
 
-const loadChats = useCallback(async () => {
+  const loadChats = useCallback(async () => {
     if (!isLoaded || !isSignedIn) return;
 
     const hadChatsBefore = chatsLengthRef.current > 0;
@@ -87,7 +87,7 @@ const loadChats = useCallback(async () => {
         (chat: Chat) => chat.title?.trim().toLowerCase() !== "new chat"
       );
       setChats(validChats);
-      setError(null); 
+      setError(null);
     } catch (e: any) {
       console.error("Failed to load chat history:", e);
       if (!hadChatsBefore) {
@@ -107,7 +107,7 @@ const loadChats = useCallback(async () => {
   useEffect(() => {
     if (!isLoaded || !isSignedIn) return;
 
-    loadChatsRef.current(); 
+    loadChatsRef.current();
     const interval = setInterval(() => {
       loadChatsRef.current();
     }, 5000);
@@ -119,7 +119,7 @@ const loadChats = useCallback(async () => {
   useEffect(() => {
     if (isFirstPathnameRun.current) {
       isFirstPathnameRun.current = false;
-      return; 
+      return;
     }
     if (!isLoaded || !isSignedIn) return;
     loadChatsRef.current();
@@ -157,12 +157,13 @@ const loadChats = useCallback(async () => {
               <Youtube className="size-4 text-white" />
             </div>
           </div>
-          <Link href="/">
+
+         
           <span className="text-sm font-bold text-white tracking-tight">VideoGPT</span>
-          </Link>
+
         </Link>
 
-  
+
         <button
           onClick={handleNewChat}
           disabled={isCreating}

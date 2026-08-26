@@ -57,8 +57,6 @@ export function VideoTimelinePanel({
   const [currentVideoId, setCurrentVideoId] = useState<string | null>(activeVideoId);
   const [videoTitle, setVideoTitle] = useState("Add a video to get started");
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // 🆕 روی موبایل، بخش Timeline/Highlights به‌صورت پیش‌فرض بسته است؛
-  // فقط با زدن آیکون زیر ویدیو باز می‌شود (دقیقاً طبق درخواست).
   const [showMobileTimeline, setShowMobileTimeline] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);

@@ -331,7 +331,6 @@ export default function ChatInterface({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
   const { jumpToTime, hydrateFromChat } = useVideo();
-  // 🆕 دکمه‌ی همبرگر بالای صفحه، دراور سایدبار را باز می‌کند (شبیه ChatGPT)
   const { toggle: toggleSidebar } = useSidebar();
 
   const hydratedChatIdRef = useRef<string | null>(null);
@@ -384,7 +383,6 @@ export default function ChatInterface({
       <div className="sticky top-0 z-10 flex-shrink-0 border-b border-white/[0.06] bg-[#08101F]/80 px-4 py-3 backdrop-blur-md sm:px-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2 min-w-0">
-            {/* 🆕 دکمه‌ی همبرگر — فقط موبایل، دقیقاً مثل آیکون ChatGPT بالا-چپ */}
             <button
               type="button"
               onClick={toggleSidebar}
@@ -541,11 +539,10 @@ export default function ChatInterface({
                 );
               })}
 
-              {/* Typing Indicator */}
+            
               {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
                 <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                  {/* 🆕 قبل از رسیدن اولین progress event: PreflightIndicator (۴ نقطه‌ی ظریف)
-                      بعد از رسیدن اولین گره: NodeProgressIndicator (وضعیت دقیق گره) */}
+                 
                   {currentNode ? (
                     <NodeProgressIndicator currentNode={currentNode} />
                   ) : (

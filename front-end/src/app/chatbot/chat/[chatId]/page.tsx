@@ -26,10 +26,8 @@ export default function ChatPage() {
   const initialVideoUrl = searchParams.get("videoUrl");
   const userId = useChatUserId();
   
-  // 🛡️ دریافت تابع استخراج توکن کلرک
   const { getToken } = useAuth();
   
-  // 🔧 فیکس خطا: timelineItems را هم از کانتکست استخراج کردیم
   const { setActiveVideoId, timelineItems, setTimelineItems, hydrateFromChat } = useVideo();
 
   const [chat, setChat] = useState<Chat | null>(null);
@@ -37,8 +35,6 @@ export default function ChatPage() {
   const [isLoadingChat, setIsLoadingChat] = useState(true);
   const [isTyping, setIsTyping] = useState(false);
   const [isVideoProcessing, setIsVideoProcessing] = useState(false);
-  // 🆕 گره‌ای از پایپ‌لاین LangGraph که همین الان روی بک‌اند در حال اجراست
-  // (برای نمایش زنده در NodeProgressIndicator داخل ChatInterface)
   const [currentNode, setCurrentNode] = useState<PipelineNode | null>(null);
   
   const messageIdCounter = useRef(0);
@@ -149,7 +145,7 @@ export default function ChatPage() {
       };
       setMessages((prev) => [...prev, userMsg]);
       setIsTyping(true);
-      setCurrentNode(null); // 🆕 شروع تازه — هنوز هیچ گره‌ای اجرا نشده
+      setCurrentNode(null); 
 
       try {
         const token = await getToken();
@@ -160,8 +156,7 @@ export default function ChatPage() {
           return;
         }
 
-        // 🆕 به‌جای sendChatMessage یک‌جا، از نسخه‌ی استریم‌شده استفاده می‌کنیم
-        // تا روی هر رویداد "progress" گره‌ی فعال آپدیت شود.
+      
         const data = await sendChatMessageStream(
           content,
           token,
@@ -181,7 +176,6 @@ export default function ChatPage() {
         };
         setMessages((prev) => [...prev, assistantMsg]);
 
-        // 🆕 تزریق منابع ویدیویی
         try {
           const parsed = JSON.parse(data.response);
           
@@ -202,7 +196,6 @@ export default function ChatPage() {
               }));
 
             if (newVideoItems.length) {
-              // 🔧 فیکس خطا: مستقیماً از timelineItems کانتکست استفاده می‌کنیم
               const existingTimes = new Set(timelineItems.map((t) => t.time));
               const merged = [...timelineItems, ...newVideoItems.filter((t) => !existingTimes.has(t.time))];
               
@@ -212,7 +205,6 @@ export default function ChatPage() {
             }
           }
         } catch {
-          // پاسخ ساختاریافته نبود
         }
 
       } catch (err) {
@@ -220,10 +212,9 @@ export default function ChatPage() {
         alert("خطا در ارسال پیام. لطفاً دوباره تلاش کنید.");
       } finally {
         setIsTyping(false);
-        setCurrentNode(null); // 🆕 پایان چرخه — کارت وضعیت گره پاک می‌شود
+        setCurrentNode(null); 
       }
     },
-    // 🔧 فیکس خطا: timelineItems را به وابستگی‌ها اضافه کردیم
     [userId, chatId, chat?.video_id, getToken, timelineItems, setTimelineItems]
   );
 
