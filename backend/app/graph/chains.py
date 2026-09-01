@@ -38,14 +38,8 @@ def get_llm(model_name: str, *, temperature: float = 0.0) -> ChatOpenAI:
     )
 
 
-# this prompt is for improving question and make it more 
+# this chain use for improving question and make it more optimize base on the historey
 def create_contextualize_chain() -> Any:
-    """History-aware query rewriter.
-
-    Takes the raw chat_history (list of BaseMessage) + the latest user query and
-    produces a standalone question with no dangling pronouns/references. This
-    output — NOT the raw query — must be what supervisor/retriever/generator see.
-    """
     system_prompt = (
         "You reformulate a user's latest chat message into a fully self-contained, "
         "standalone question, using the conversation history for context.\n\n"
@@ -60,13 +54,11 @@ def create_contextualize_chain() -> Any:
         "4. Preserve the user's original language exactly — do not translate."
     )
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             MessagesPlaceholder("chat_history"),
             ("human", "Latest message: {query}"),
-        ]
-    )
+        ])
 
     settings = get_settings()
     return prompt | get_llm(settings.supervisor_model).with_structured_output(
@@ -76,10 +68,6 @@ def create_contextualize_chain() -> Any:
 
 #  Reranker chain (LLM fallback used when a local cross-encoder isn't installed)
 def create_rerank_chain() -> Any:
-    """LLM-as-reranker fallback. Scores each candidate chunk 0..1 for relevance
-    to the (standalone) query. Used by reranker_node only when the
-    `sentence-transformers` cross-encoder is unavailable in the environment.
-    """
     system_prompt = (
         "You are a relevance-scoring engine for a RAG retrieval pipeline.\n"
         "You will receive a user question and a numbered list of transcript chunks.\n"
@@ -89,20 +77,17 @@ def create_rerank_chain() -> Any:
         "You MUST return exactly one entry per input index, in any order."
     )
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("human", "Question: {query}\n\nChunks:\n{numbered_chunks}"),
-        ]
-    )
+        ])
 
     settings = get_settings()
     return prompt | get_llm(settings.supervisor_model).with_structured_output(RerankResult)
 
 
-# Prompt for supervisor chain
+# Create chain for supervisor routing decision.
 def create_supervisor_chain() -> Any:
-    """Create chain for supervisor routing decision."""
     system_prompt = (
         "You are a routing supervisor in an educational AI system.\n"
         "Your job is to analyze the user's query and the UI context (search_scope) "
@@ -120,9 +105,8 @@ def create_supervisor_chain() -> Any:
     return prompt | get_llm(settings.supervisor_model).with_structured_output(RouteDecision)
 
 
-# Prompt for validation chain
+# this chain for document relevance validation
 def create_validator_chain() -> Any:
-    """Create chain for document relevance validation."""
     system_prompt = (
         "You are a strict quality control grader.\n"
         "Your task is to assess whether the provided video transcript excerpts contain "
@@ -131,8 +115,7 @@ def create_validator_chain() -> Any:
         "Do not make assumptions. Be extremely strict."
     )
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("human", "User Question: {query}\n\nRetrieved Context:\n{context}"), ])
 
@@ -160,12 +143,10 @@ def create_generator_chain() -> Any:
         "Context:\n{context}"
     )
 
-    prompt = ChatPromptTemplate.from_messages(
-        [
+    prompt = ChatPromptTemplate.from_messages([
             ("system", system_prompt),
             ("human", "{query}"),
-        ]
-    )
+        ] )
 
     settings = get_settings()
     return prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
@@ -173,12 +154,6 @@ def create_generator_chain() -> Any:
 
 # Prompt for making chapters 
 def create_chapters_chain() -> Any:
-    """Create chain that turns a raw, timestamped transcript into a YouTube-style chapter list.
-
-    This is what feeds `timeline_items` in VideoTimelinePanel. It must NEVER see the user's
-    chat query — it only ever looks at the transcript — so chapter titles can never end up
-    being the user's question.
-    """
     system_prompt = (
         "You are an expert video content editor creating a YouTube-style chapter list.\n"
         "You will be given timestamped transcript segments (format: [MM:SS] text) for a single video.\n\n"

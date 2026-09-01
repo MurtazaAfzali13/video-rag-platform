@@ -35,8 +35,8 @@ function CustomTooltip({ active, payload, valuePrefix }: any) {
 
 export function DonutChart({ data, centerLabel, centerValue, valuePrefix = "" }: DonutChartProps) {
   return (
-    <div className="flex flex-col items-center gap-8 sm:flex-row sm:justify-center">
-      {/* بخش چارت دونات */}
+   <div className="flex w-full flex-col items-center gap-6 sm:flex-row sm:justify-between">
+      
       <div className="relative h-[200px] w-[200px] shrink-0">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
@@ -60,7 +60,7 @@ export function DonutChart({ data, centerLabel, centerValue, valuePrefix = "" }:
           </PieChart>
         </ResponsiveContainer>
         
-        {/* متن‌های وسط چارت */}
+       
         <motion.div
           initial={{ opacity: 0, scale: 0.8 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -72,15 +72,15 @@ export function DonutChart({ data, centerLabel, centerValue, valuePrefix = "" }:
         </motion.div>
       </div>
 
-      {/* بخش لیست (Legend) */}
-      <div className="flex w-full flex-col justify-center space-y-3.5 sm:w-auto">
+      
+      <div className="flex w-full flex-1 flex-col justify-center space-y-3.5">
         {data.map((d, i) => (
           <motion.div
             key={d.id}
             initial={{ opacity: 0, x: 12 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.15 + i * 0.06 }}
-            className="flex items-center justify-between gap-10 text-[14px]"
+            className="flex items-center justify-between gap-3 text-[14px]"
           >
             <div className="flex items-center gap-3 text-slate-300">
               <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: d.color }} />

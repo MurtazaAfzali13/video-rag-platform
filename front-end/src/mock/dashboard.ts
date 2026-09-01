@@ -56,7 +56,7 @@ export const metrics: DashboardMetric[] = [
     id: "users-online",
     label: "Users Online",
     value: "128",
-    rawValue: 128,
+    rawValue: 10,
     change: 12.5,
     trend: "up",
     icon: Users,
@@ -96,17 +96,7 @@ export const metrics: DashboardMetric[] = [
     color: "blue",
     spark: spark(400, 60),
   },
-  {
-    id: "ai-cost-today",
-    label: "AI Cost Today",
-    value: "$38.21",
-    rawValue: 38.21,
-    change: 15.4,
-    trend: "up",
-    icon: DollarSign,
-    color: "pink",
-    spark: spark(35, 6),
-  },
+
   {
     id: "avg-response-time",
     label: "Avg. Response Time",
@@ -129,17 +119,7 @@ export const metrics: DashboardMetric[] = [
     color: "green",
     spark: spark(99, 0.6),
   },
-  {
-    id: "errors-today",
-    label: "Errors Today",
-    value: "3",
-    rawValue: 3,
-    change: -40,
-    trend: "down",
-    icon: AlertTriangle,
-    color: "red",
-    spark: spark(4, 2),
-  },
+ 
 ];
 
 export const salesOverview: ChartPoint[] = [

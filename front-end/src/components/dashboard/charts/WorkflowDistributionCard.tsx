@@ -117,7 +117,7 @@ export function WorkflowDistributionCard() {
           </div>
         ) : displayDistribution.length > 0 ? (
           <motion.div
-            key={workflowTimeframe} // 🆕 با تغییر بازه، انیمیشن ورود دوباره اجرا میشه
+            key={workflowTimeframe} 
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.3 }}

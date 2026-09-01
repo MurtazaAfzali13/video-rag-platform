@@ -5,6 +5,7 @@ import "./globals.css";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { DashboardProvider } from "@/context/DashboardContext";
 import { MonitoringProvider } from "@/context/MonitoringContext";
+import { VideoProvider } from "@/context/Video_context";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,6 +22,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <DashboardProvider>
+         <VideoProvider>
         <MonitoringProvider>
       <html lang="en" className="dark">
         <body className={`${inter.className} bg-black text-white antialiased`}>
@@ -30,6 +32,7 @@ export default function RootLayout({
         </body>
       </html>
       </MonitoringProvider>
+      </VideoProvider>
       </DashboardProvider>
     </ClerkProvider>
   );

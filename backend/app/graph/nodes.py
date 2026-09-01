@@ -59,8 +59,7 @@ def _fetch_video_context(
         search_kwargs={
             "filter": {"video_id": {"$eq": video_id}},
             "k": k,
-        }
-    )
+        })
 
     docs = retriever.invoke(query)
 
@@ -103,7 +102,7 @@ def contextualize_node(state: AgentState) -> dict[str, Any]:
     elapsed_ms = int((time.time() - start) * 1000)
     return {
         "standalone_query": standalone,
-        "other_time_ms": state.get("other_time_ms", 0) + elapsed_ms,                }
+        "other_time_ms": state.get("other_time_ms", 0) + elapsed_ms,}
 
 # Analyze the user question and UI content to specify the next node 
 def supervisor_node(state: AgentState) -> dict[str, Any]:
