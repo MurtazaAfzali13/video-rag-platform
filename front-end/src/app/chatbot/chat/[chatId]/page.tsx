@@ -18,6 +18,9 @@ import ChatInterface from "@/components/chat/ChatInterface";
 
 import { useAuth } from "@clerk/nextjs";
 
+
+type QuestionType = "general" | "about_video";
+
 export default function ChatPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -133,7 +136,8 @@ export default function ChatPage() {
   }, [initialVideoUrl, userId, chatId, setActiveVideoId, loadChatData, router]);
 
   const handleSendMessage = useCallback(
-    async (content: string) => {
+
+    async (content: string, questionType: QuestionType) => {
       if (!userId || !content.trim()) return;
 
       const userMsg: Message = {
@@ -156,15 +160,20 @@ export default function ChatPage() {
           return;
         }
 
-      
+        const searchScope: "single_video" | "general" =
+          questionType === "general" ? "general" : "single_video";
+        const effectiveVideoId =
+          searchScope === "single_video" ? (chat?.video_id ?? null) : null;
+
         const data = await sendChatMessageStream(
           content,
           token,
           chatId,
-          chat?.video_id ?? null,
+          effectiveVideoId,
           {
             onProgress: (node) => setCurrentNode(node),
-          }
+          },
+          searchScope
         );
 
         const assistantMsg: Message = {

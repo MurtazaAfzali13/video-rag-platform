@@ -1,7 +1,6 @@
 const BASE = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:8000";
 
 export async function fetchChats(token: string) {
-  // 🛡️ تغییر امنیتی: user_id از آدرس حذف شد و توکن در Header قرار گرفت
   const res = await fetch(`${BASE}/api/chats?limit=50`, {
     method: "GET",
     headers: {
@@ -14,7 +13,6 @@ export async function fetchChats(token: string) {
 }
 
 export async function fetchChatMessages(chatId: string, token: string) {
-  // 🛡️ تغییر امنیتی: user_id از آدرس حذف شد و توکن اضافه شد
   const res = await fetch(
     `${BASE}/api/chats/${chatId}/messages?limit=200`, 
     {
@@ -30,7 +28,6 @@ export async function fetchChatMessages(chatId: string, token: string) {
 }
 
 export async function fetchChatMeta(chatId: string, token: string) {
-  // 🛡️ تغییر امنیتی: user_id از آدرس حذف شد
   const res = await fetch(
     `${BASE}/api/chats/${chatId}`, 
     {
@@ -54,9 +51,8 @@ export async function bindVideoToChat(
     method: "PATCH",
     headers: { 
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}` // 🛡️ ارسال توکن
+      "Authorization": `Bearer ${token}` 
     },
-    // 🛡️ تغییر امنیتی: user_id از بادی حذف شد
     body: JSON.stringify({ video_id: videoId }),
   });
   if (!res.ok) throw new Error("Failed to bind video");
@@ -73,30 +69,22 @@ export async function sendChatMessage(
     method: "POST",
     headers: { 
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${token}` // 🛡️ ارسال توکن
+      "Authorization": `Bearer ${token}` 
     },
     body: JSON.stringify({
       query,
       chat_id: chatId,
       video_id: videoId,
-      // 🛡️ تغییر امنیتی: فیلد user_id از اینجا کاملاً حذف شد
     }),
   });
   
   if (!res.ok) {
-    // گرفتن ارور دقیق از بک‌اند برای نمایش به کاربر (مثل محدودیت پیام‌ها)
     const errData = await res.json().catch(() => ({}));
     throw new Error(errData.detail || "Failed to send message");
   }
   
   return res.json();
 }
-
-// ==========================================
-// 🆕 SSE Streaming — برای نمایش زنده‌ی گره‌ی درحال‌اجرای LangGraph در فرانت
-// ==========================================
-
-/** باید دقیقاً با کلیدهای NODE_LABELS_FA در app/chats.py (بک‌اند) یکی باشد. */
 export type PipelineNode =
   | "contextualize"
   | "supervisor"
@@ -107,32 +95,25 @@ export type PipelineNode =
   | "generator"
   | "video_summary";
 
+export type SearchScope = "single_video" | "general";
+
 export interface ChatStreamResult {
   response: string;
   chat_id: string;
 }
 
 export interface ChatStreamCallbacks {
-  /** هر بار که یک گره‌ی جدید از پایپ‌لاین شروع به اجرا می‌کند صدا زده می‌شود. */
   onProgress?: (node: PipelineNode, label: string) => void;
-  /** وقتی پاسخ نهایی از بک‌اند می‌رسد (پیش از resolve شدن Promise) صدا زده می‌شود. */
   onFinal?: (result: ChatStreamResult) => void;
 }
 
-/**
- * نسخه‌ی استریم‌شده‌ی sendChatMessage. به‌جای یک پاسخ یک‌جا، اندپوینت
- * `/api/chat/stream` بک‌اند را با fetch + ReadableStream می‌خواند و روی هر
- * رویداد SSE (`progress` یا `final` یا `error`) کال‌بک مربوطه را صدا می‌زند.
- *
- * از EventSource استفاده نشده چون EventSource نه POST را پشتیبانی می‌کند
- * و نه هدر Authorization سفارشی را — بنابراین باید دستی با fetch stream بخوانیم.
- */
 export async function sendChatMessageStream(
   query: string,
   token: string,
   chatId: string | null,
   videoId: string | null,
-  callbacks: ChatStreamCallbacks = {}
+  callbacks: ChatStreamCallbacks = {},
+  searchScope?: SearchScope
 ): Promise<ChatStreamResult> {
   const res = await fetch(`${BASE}/api/chat/stream`, {
     method: "POST",
@@ -144,6 +125,7 @@ export async function sendChatMessageStream(
       query,
       chat_id: chatId,
       video_id: videoId,
+      ...(searchScope ? { search_scope: searchScope } : {}),
     }),
   });
 
@@ -168,9 +150,8 @@ export async function sendChatMessageStream(
 
     buffer += decoder.decode(value, { stream: true });
 
-    // رویدادهای SSE با یک خط خالی ("\n\n") از هم جدا می‌شوند
     const rawEvents = buffer.split("\n\n");
-    buffer = rawEvents.pop() || ""; // آخرین تکه ممکن است ناقص باشد، برای دور بعد نگه می‌داریم
+    buffer = rawEvents.pop() || ""; 
 
     for (const rawEvent of rawEvents) {
       if (!rawEvent.trim()) continue;
@@ -192,7 +173,7 @@ export async function sendChatMessageStream(
       try {
         parsed = JSON.parse(dataLine);
       } catch {
-        continue; // یک chunk ناقص/نامعتبر را نادیده می‌گیریم
+        continue; 
       }
 
       if (eventName === "progress") {

@@ -163,10 +163,6 @@ _cross_encoder_load_failed = False
 
 
 def _get_cross_encoder():
-    """Lazily load a lightweight local cross-encoder. Returns None if the
-    `sentence-transformers` package isn't installed, so reranker_node can fall
-    back to the LLM-based reranker without crashing the pipeline.
-    """
     global _cross_encoder, _cross_encoder_load_failed
     if _cross_encoder is not None or _cross_encoder_load_failed:
         return _cross_encoder
@@ -202,11 +198,6 @@ def _rerank_with_llm(query: str, documents: list[dict]) -> list[float]:
 
 
 def reranker_node(state: AgentState, *, top_n: int = MAX_RERANK_TOP_N) -> dict[str, Any]:
-    """Filters noise out of the k=5..8 candidate pool from retriever_node before
-    validation. Runs BEFORE validator so the validator's binary relevance check
-    only ever sees the strongest candidates, reducing false 'no' -> unnecessary
-    web_search fallbacks.
-    """
     logger.info("Entering Reranker Node...")
     start = time.time()
 
@@ -267,7 +258,6 @@ def validator_node(state: AgentState) -> dict[str, Any]:
 
 # Using tavily for engine search to find information from web 
 def web_search_node(state: AgentState) -> dict[str, Any]:
-    """Execute a fallback web search when local database resources are insufficient."""
     logger.info("Entering Web Search Node (Tavily)...")
     query = _resolved_query(state)
     start_time = time.time()

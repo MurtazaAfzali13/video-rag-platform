@@ -4,9 +4,9 @@ import { motion } from "framer-motion";
 import { Menu, Bell, Calendar, Download, RefreshCw, Sun, Moon, ChevronDown } from "lucide-react";
 import { useState } from "react";
 import { SearchInput } from "../shared/SearchInput";
-import { Avatar } from "../shared/Avatar";
 import { cn } from "@/lib/dashboard-cn";
 import { useTheme } from "../theme/ThemeProvider";
+import { useUser } from "@clerk/nextjs";
 
 interface HeaderProps {
   onOpenMobileMenu: () => void;
@@ -19,8 +19,9 @@ export function Header({
   onOpenMobileMenu,
   breadcrumb = "Dashboard / Overview",
   title = "Dashboard",
-  subtitle = "Welcome back, Armin! Here's what's happening with your AI platform today.",
+  subtitle,
 }: HeaderProps) {
+  const { user } = useUser();
   const { theme, toggleTheme } = useTheme();
   const [refreshing, setRefreshing] = useState(false);
 
@@ -28,6 +29,9 @@ export function Header({
     setRefreshing(true);
     setTimeout(() => setRefreshing(false), 900);
   }
+
+  // داینامیک کردن متن خوش‌آمدگویی بر اساس نام کاربر
+  const displaySubtitle = subtitle || `Welcome back, ${user?.firstName || 'User'}! Here's what's happening with your AI platform today.`;
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/[0.06] bg-slate-900/70 backdrop-blur-xl">
@@ -43,7 +47,7 @@ export function Header({
         <div className="min-w-0 flex-1">
           <p className="mb-0.5 hidden text-xs text-white/30 sm:block">{breadcrumb}</p>
           <h1 className="truncate text-xl font-bold text-white md:text-2xl">{title}</h1>
-          <p className="hidden truncate text-xs text-white/40 sm:block md:text-sm">{subtitle}</p>
+          <p className="hidden truncate text-xs text-white/40 sm:block md:text-sm">{displaySubtitle}</p>
         </div>
 
         {/* Desktop controls */}
@@ -57,7 +61,6 @@ export function Header({
 
           <button
             onClick={handleRefresh}
-            aria-label="Refresh data"
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/60 transition-colors hover:bg-white/[0.06]"
           >
             <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
@@ -65,16 +68,12 @@ export function Header({
 
           <button
             onClick={toggleTheme}
-            aria-label="Toggle theme"
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/60 transition-colors hover:bg-white/[0.06]"
           >
             {theme === "dark" ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
           </button>
 
-          <button
-            aria-label="Notifications"
-            className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/60 transition-colors hover:bg-white/[0.06]"
-          >
+          <button className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/60 transition-colors hover:bg-white/[0.06]">
             <Bell className="h-4 w-4" />
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-pink-500" />
           </button>
@@ -88,22 +87,47 @@ export function Header({
             Export Report
           </motion.button>
 
-          <button className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] py-1.5 pl-1.5 pr-2.5 hover:bg-white/[0.06]">
-            <Avatar initials="AA" size="sm" />
-            <ChevronDown className="h-3.5 w-3.5 text-white/40" />
+          {/* دکمه پروفایل دسکتاپ به همراه اطلاعات کلرک */}
+          <button className="flex items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] py-1 pl-1 pr-2.5 hover:bg-white/[0.06]">
+            {user?.imageUrl ? (
+              <img
+                src={user.imageUrl}
+                alt={user.fullName || "User"}
+                className="size-7 rounded-full ring-2 ring-purple-500/20 object-cover"
+              />
+            ) : (
+              <div className="size-7 rounded-full bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-purple-500/20">
+                {user?.firstName?.[0] ?? "U"}
+              </div>
+            )}
+            <span className="max-w-[100px] truncate text-sm font-medium text-slate-300">
+              {user?.firstName || user?.primaryEmailAddress?.emailAddress?.split('@')[0] || "User"}
+            </span>
+            <ChevronDown className="h-3.5 w-3.5 text-white/40 ml-1" />
           </button>
         </div>
 
-        {/* Mobile: just bell + avatar */}
+        {/* Mobile: bell + avatar */}
         <div className="flex items-center gap-2 lg:hidden">
-          <button
-            aria-label="Notifications"
-            className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/60"
-          >
+          <button className="relative flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-white/[0.03] text-white/60">
             <Bell className="h-4 w-4" />
             <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-pink-500" />
           </button>
-          <Avatar initials="AA" size="sm" />
+          
+          {/* پروفایل موبایل */}
+          <button className="flex rounded-full ring-2 ring-white/10 overflow-hidden">
+             {user?.imageUrl ? (
+              <img
+                src={user.imageUrl}
+                alt={user.fullName || "User"}
+                className="size-8 rounded-full object-cover"
+              />
+            ) : (
+              <div className="size-8 rounded-full bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center text-xs font-bold text-white">
+                {user?.firstName?.[0] ?? "U"}
+              </div>
+            )}
+          </button>
         </div>
       </div>
     </header>

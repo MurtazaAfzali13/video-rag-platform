@@ -13,23 +13,9 @@ from app.graph.nodes import (
 )
 from app.graph.state import AgentState
 
+from app.graph.router import route_from_supervisor,route_from_validator
+
 logger = logging.getLogger(__name__)
-
-
-def route_from_supervisor(state: AgentState) -> str:
-    intent = state.get("next_node")
-    if intent == "video_summary":
-        return "video_summary"
-
-    return "retriever"
-
-
-def route_from_validator(state: AgentState) -> str:
-    decision = state.get("next_node")
-    if decision == "web_search":
-        return "web_search"
-
-    return "generator"
 
 
 def create_agent_graph():
