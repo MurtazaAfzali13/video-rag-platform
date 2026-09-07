@@ -403,7 +403,7 @@ def video_summary_node(state: AgentState) -> dict[str, Any]:
     video_id = state["video_id"]
     query = _resolved_query(state)
 
-    context = _fetch_video_context(user_id, video_id, query, k=4)
+    context = _fetch_video_context(user_id, video_id, query, k=5)
     summary_chain = create_summary_chain()
     summary: VideoSummarySchema = invoke_with_retry(summary_chain, {"context": context, "query": query})
 
