@@ -97,7 +97,7 @@ const TimestampPill = memo(function TimestampPill({
     <button
       type="button"
       onClick={() => onClick(parseTimestampToSeconds(time))}
-      className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-gradient-to-r from-violet-600/20 to-purple-700/20 px-3 py-1.5 text-xs font-medium text-purple-300 shadow-sm shadow-purple-500/10 transition-all duration-200 hover:scale-105 hover:border-purple-400/70 hover:from-violet-600/40 hover:to-purple-700/40 hover:text-purple-100 active:scale-95 group"
+      className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-300 shadow-sm shadow-blue-400/10 transition-all duration-200 hover:scale-105 hover:border-blue-300/70 hover:from-blue-500/40 hover:to-blue-600/40 hover:text-blue-100 active:scale-95 group"
       aria-label={`Jump to ${time}`}
     >
       <span className="shrink-0 font-mono">[{time}]</span>
@@ -119,7 +119,7 @@ const CopyButton = memo(function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="rounded-md p-1.5 text-slate-400 transition-all duration-200 hover:bg-slate-700/50 hover:text-purple-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+      className="rounded-md p-1.5 text-slate-400 transition-all duration-200 hover:bg-slate-700/50 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
       title="Copy response"
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
@@ -158,7 +158,7 @@ const AssistantContent = memo(function AssistantContent({
 
     return (
       <div className="flex w-full flex-col gap-4 text-sm">
-        <div className="flex items-center gap-2 border-b border-purple-500/20 pb-2 text-xs text-purple-400">
+        <div className="flex items-center gap-2 border-b border-blue-400/20 pb-2 text-xs text-blue-300">
           <Sparkles className="size-4" />
           <span className="font-medium">AI Video Summary</span>
         </div>
@@ -167,25 +167,27 @@ const AssistantContent = memo(function AssistantContent({
           <p className="leading-relaxed text-slate-300">{parsedContent.overall_summary}</p>
         )}
 
-        {Object.keys(groupedTakeaways).length > 0 && (
+    {Object.keys(groupedTakeaways).length > 0 && (
           <div className="mt-2 space-y-4">
             {Object.entries(groupedTakeaways).map(([time, points]: [string, any], i: number) => (
-              <div key={i} className="flex flex-col gap-2 rounded-lg bg-white/5 p-3 border border-white/5 relative">
-              
-                {time !== "general" && (
-                  <div className="absolute -top-3 right-3">
-                    <TimestampPill time={time} onClick={onJumpToTime} />
-                  </div>
-                )}
+              <div key={i} className="flex flex-col gap-2 rounded-lg bg-white/5 p-3 border border-white/5">
                 
-                <ul className={`space-y-1.5 text-slate-300 text-sm leading-relaxed ${time !== "general" ? "mt-3" : ""}`}>
+        
+                <ul className="space-y-1.5 text-slate-300 text-sm leading-relaxed">
                   {points.map((point: string, idx: number) => (
                     <li key={idx} className="flex gap-2">
-                      <span className="text-purple-500 mt-1">•</span>
+                      <span className="text-blue-400 mt-1">•</span>
                       <span>{point}</span>
                     </li>
                   ))}
                 </ul>
+
+                {time !== "general" && (
+                  <div className="flex justify-end mt-2">
+                    <TimestampPill time={time} onClick={onJumpToTime} />
+                  </div>
+                )}
+                
               </div>
             ))}
           </div>
@@ -226,7 +228,7 @@ const AssistantContent = memo(function AssistantContent({
                       key={key}
                       type="button"
                       onClick={() => onJumpToTime(source.start_time || 0)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-purple-500/40 bg-gradient-to-r from-violet-600/20 to-purple-700/20 px-3 py-1.5 text-xs font-medium text-purple-300 shadow-sm shadow-purple-500/10 transition-all duration-200 hover:scale-105 hover:border-purple-400/70 hover:from-violet-600/40 hover:to-purple-700/40 hover:text-purple-100 active:scale-95 group"
+                      className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-300 shadow-sm shadow-blue-400/10 transition-all duration-200 hover:scale-105 hover:border-blue-300/70 hover:from-blue-500/40 hover:to-blue-600/40 hover:text-blue-100 active:scale-95 group"
                       title={source.title || undefined}
                     >
                       <span className="shrink-0 font-mono">{formatTimestamp(source.start_time || 0)}</span>
@@ -272,7 +274,7 @@ const AssistantContent = memo(function AssistantContent({
                   {...props}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-purple-400 transition-colors hover:text-purple-300 hover:underline hover:underline-offset-2 break-words"
+                  className="text-blue-300 transition-colors hover:text-blue-300 hover:underline hover:underline-offset-2 break-words"
                 />
               ),
               p: ({ node, ...props }) => (
@@ -285,7 +287,7 @@ const AssistantContent = memo(function AssistantContent({
 
           {isStreaming && (
             <span
-              className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-purple-400 align-middle"
+              className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-blue-300 align-middle"
               aria-hidden="true"
             />
           )}
@@ -376,7 +378,7 @@ export default function ChatInterface({
     <section
       className="relative flex min-w-0 flex-1 flex-col h-full"
       style={{
-        background: "radial-gradient(circle at top, rgba(124,58,237,0.12), transparent 40%), linear-gradient(180deg, #08101F 0%, #050816 100%)",
+        background: "radial-gradient(circle at top, rgba(59,130,246,0.12), transparent 40%), linear-gradient(180deg, #08101F 0%, #050816 100%)",
       }}
     >
       {/* Header */}
@@ -392,7 +394,7 @@ export default function ChatInterface({
               <Menu className="size-5" />
             </button>
 
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/25">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 shadow-lg shadow-blue-400/25">
               <Sparkles className="size-3.5 text-white" />
             </div>
             <h2 className="text-sm font-semibold text-white truncate">
@@ -416,7 +418,7 @@ export default function ChatInterface({
                 onClick={() => setQuestionType("general")}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
                   questionType === "general"
-                    ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
+                    ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-400/20"
                     : "text-slate-400 hover:text-slate-300"
                 }`}
               >
@@ -428,7 +430,7 @@ export default function ChatInterface({
                 onClick={() => setQuestionType("about_video")}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
                   questionType === "about_video"
-                    ? "bg-gradient-to-r from-purple-600 to-purple-700 text-white shadow-lg shadow-purple-500/20"
+                    ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-400/20"
                     : "text-slate-400 hover:text-slate-300"
                 }`}
               >
@@ -445,14 +447,14 @@ export default function ChatInterface({
           {isLoading && messages.length === 0 ? (
             <div className="flex items-center justify-center h-[280px]">
               <div className="flex flex-col items-center gap-3">
-                <div className="size-6 animate-spin rounded-full border-2 border-purple-500 border-t-transparent" />
+                <div className="size-6 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
                 <p className="text-sm text-slate-400">Loading conversation…</p>
               </div>
             </div>
           ) : messages.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-[280px] sm:h-[320px] text-center">
-              <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-purple-500/20 to-purple-700/20 border border-purple-500/20">
-                <MessageSquare className="size-8 text-purple-400" />
+              <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-400/20 to-blue-600/20 border border-blue-400/20">
+                <MessageSquare className="size-8 text-blue-300" />
               </div>
               <h2 className="text-lg font-semibold text-white">Ask anything about this video</h2>
               <p className="text-sm text-slate-400 mt-2 max-w-md">
@@ -475,14 +477,14 @@ export default function ChatInterface({
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-end"
                     >
-                      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-gradient-to-br from-violet-600 to-purple-800 px-4 py-3 shadow-lg shadow-purple-500/25 sm:max-w-[85%]">
+                      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-gradient-to-br from-blue-500 to-blue-700 px-4 py-3 shadow-lg shadow-blue-400/25 sm:max-w-[85%]">
                         <p className="text-sm leading-relaxed whitespace-pre-wrap text-white">
                           {msg.content}
                         </p>
                         {timeLabel && (
-                          <div className="mt-1.5 flex items-center justify-end gap-1 text-[10px] text-purple-200/70">
+                          <div className="mt-1.5 flex items-center justify-end gap-1 text-[10px] text-blue-200/70">
                             <span>{timeLabel}</span>
-                            <CheckCheck className="size-3 text-purple-300/80" />
+                            <CheckCheck className="size-3 text-blue-300/80" />
                           </div>
                         )}
                       </div>
@@ -497,7 +499,7 @@ export default function ChatInterface({
                     animate={{ opacity: 1, y: 0 }}
                     className="flex justify-start w-full"
                   >
-                    <div className="mr-3 mt-1 flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20">
+                    <div className="mr-3 mt-1 flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 shadow-lg shadow-blue-400/20">
                       <Sparkles className="size-3.5 text-white" />
                     </div>
                     <div className="group relative max-w-[88%] min-w-0 rounded-2xl rounded-tl-md border border-white/[0.08] bg-[#101A2E]/90 shadow-xl backdrop-blur-md sm:max-w-[85%]">
@@ -520,16 +522,16 @@ export default function ChatInterface({
                             <button
                               type="button"
                               onClick={onRegenerate}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-400 transition-all duration-200 hover:bg-slate-700/50 hover:text-purple-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-400 transition-all duration-200 hover:bg-slate-700/50 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
                             >
                               <RotateCcw className="size-3.5" />
                               <span className="hidden sm:inline">Regenerate</span>
                             </button>
                           )}
-                          <button type="button" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-purple-400">
+                          <button type="button" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-blue-300">
                             <ThumbsUp className="size-3.5" />
                           </button>
-                          <button type="button" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-purple-400">
+                          <button type="button" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-blue-300">
                             <ThumbsDown className="size-3.5" />
                           </button>
                         </div>
@@ -559,7 +561,7 @@ export default function ChatInterface({
       {/* Input Area */}
       <div className="sticky bottom-0 z-10 flex-shrink-0 bg-gradient-to-t from-[#050816] via-[#050816]/98 to-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
         <form onSubmit={handleSend} className="mx-auto max-w-3xl">
-          <div className="relative rounded-2xl border border-slate-700/50 bg-[#0C1426]/95 shadow-lg backdrop-blur-sm transition-all duration-200 focus-within:border-purple-500/50 focus-within:shadow-purple-500/10">
+          <div className="relative rounded-2xl border border-slate-700/50 bg-[#0C1426]/95 shadow-lg backdrop-blur-sm transition-all duration-200 focus-within:border-blue-400/50 focus-within:shadow-blue-400/10">
             <textarea
               id="chat-input"
               ref={textareaRef}
@@ -574,7 +576,7 @@ export default function ChatInterface({
             <button
               type="submit"
               disabled={!input.trim() || isTyping}
-              className="absolute right-2 bottom-2 flex size-9 items-center justify-center rounded-xl bg-gradient-to-r from-violet-600 to-purple-700 text-white shadow-lg shadow-purple-500/25 transition-all duration-200 hover:from-violet-500 hover:to-purple-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50 disabled:cursor-not-allowed disabled:opacity-50"
+              className="absolute right-2 bottom-2 flex size-9 items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-400/25 transition-all duration-200 hover:from-blue-400 hover:to-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Send className="size-4" />
             </button>
@@ -588,9 +590,9 @@ export default function ChatInterface({
                 const iframe = document.querySelector("iframe[title]");
                 iframe?.scrollIntoView({ behavior: "smooth", block: "start" });
               }}
-              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#0C1426]/80 px-3 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:border-purple-500/30 hover:text-white"
+              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#0C1426]/80 px-3 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:border-blue-400/30 hover:text-white"
             >
-              <ImageIcon className="size-4 text-purple-400" />
+              <ImageIcon className="size-4 text-blue-300" />
               Screenshot
             </button>
             <button
@@ -612,7 +614,7 @@ export default function ChatInterface({
               <button
                 type="button"
                 onClick={onClearChat}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-500/50"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
               >
                 <Trash2 className="size-3.5" />
                 Clear Chat

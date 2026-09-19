@@ -40,10 +40,6 @@ class ChatRequest(BaseModel):
     video_id: Optional[str] = Field(
         None, description="YouTube video ID for video-scoped RAG (null = multi-video search)"
     )
-    # 🩹 FIX: explicit per-message scope override coming from the UI toggle.
-    # If omitted (None), scope falls back to the old behavior of being derived
-    # from whether video_id is set. When provided, it takes precedence and
-    # controls whether video_id is actually used for retrieval below.
     search_scope: Optional[str] = Field(
         None,
         description="Explicit UI override: 'single_video' or 'general'. "
@@ -116,15 +112,6 @@ def _build_chat_history(messages: list[dict], *, max_turns: int = CHAT_HISTORY_T
 
 
 def _resolve_search_scope(request: "ChatRequest") -> tuple[str, Optional[str]]:
-    """🩹 FIX: single source of truth for scope resolution, used by both
-    _run_pipeline and _persist_result so they can never disagree.
-
-    - If the client sent an explicit search_scope, that wins.
-    - Otherwise fall back to the legacy derivation from video_id.
-    - When the resolved scope is 'general', video_id is nulled out so the
-      retriever actually searches across all of the user's videos instead
-      of silently staying scoped to the chat's bound video.
-    """
     if request.search_scope in ("single_video", "general"):
         search_scope = request.search_scope
     else:
@@ -138,9 +125,6 @@ async def _run_pipeline(
     request: ChatRequest,
     user_id: str,
 ) -> tuple[str, dict]:
-    """Shared setup for both the regular and the SSE endpoint: fetches history,
-    persists the user message, and returns the fully-populated initial_state.
-    """
     target_chat_id = request.chat_id
 
     existing = await asyncio.to_thread(get_chat, target_chat_id, user_id)
@@ -159,9 +143,6 @@ async def _run_pipeline(
         content=request.query,
     )
 
-    # 🩹 FIX: was `search_scope = "single_video" if request.video_id else "general"`,
-    # which ignored any override from the UI and always searched only the
-    # chat's bound video whenever one was present. Now resolved centrally.
     search_scope, effective_video_id = _resolve_search_scope(request)
 
     initial_state = {
@@ -189,9 +170,6 @@ async def _run_pipeline(
 
 async def _persist_result(target_chat_id: str, user_id: str, request: ChatRequest, result: dict, is_first_interaction: bool) -> None:
     workflow_type = "qa"
-    # 🩹 FIX: was recomputing search_scope independently here from
-    # request.video_id only, which could disagree with what _run_pipeline
-    # actually used for retrieval. Now reuses the same resolver.
     search_scope, _effective_video_id = _resolve_search_scope(request)
     if result.get("next_node") == "video_summary" or search_scope == "video_summary":
         workflow_type = "video_summary"

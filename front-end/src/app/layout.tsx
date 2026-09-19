@@ -10,7 +10,7 @@ import { VideoProvider } from "@/context/Video_context";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "VideoGPT — AI-Powered YouTube Analysis",
+  title: "VidBrain — AI-Powered YouTube Analysis",
   description: "Chat with any YouTube video using advanced AI",
 };
 

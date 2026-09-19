@@ -146,20 +146,20 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
   return (
     <aside className="relative flex h-full w-[280px] shrink-0 flex-col bg-gradient-to-b from-[#0B0F19] via-[#0A0E17] to-[#080C14] border-r border-white/[0.06]">
       {/* Background Glow */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-purple-600/5 via-transparent to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-br from-blue-500/5 via-transparent to-transparent" />
 
       {/* Header */}
       <div className="relative flex items-center justify-between px-4 py-4 border-b border-white/[0.06]">
         <Link href="/" className="flex items-center gap-2.5 group">
           <div className="relative">
-            <div className="absolute inset-0 rounded-lg bg-purple-600/20 blur-xl group-hover:bg-purple-600/30 transition-all" />
-            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-purple-600 to-purple-800 shadow-lg shadow-purple-500/30">
+            <div className="absolute inset-0 rounded-lg bg-blue-500/20 blur-xl group-hover:bg-blue-500/30 transition-all" />
+            <div className="relative flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-blue-700 shadow-lg shadow-blue-400/30">
               <Youtube className="size-4 text-white" />
             </div>
           </div>
 
          
-          <span className="text-sm font-bold text-white tracking-tight">VideoGPT</span>
+          <span className="text-sm font-bold text-white tracking-tight">VidBrain</span>
 
         </Link>
 
@@ -167,20 +167,20 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
         <button
           onClick={handleNewChat}
           disabled={isCreating}
-          className="hidden items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:border-purple-500/50 hover:bg-purple-600/20 transition-all duration-200 group md:flex"
+          className="hidden items-center justify-center w-8 h-8 rounded-lg bg-white/5 border border-white/10 hover:border-blue-400/50 hover:bg-blue-500/20 transition-all duration-200 group md:flex"
           title="New Chat"
         >
           {isCreating ? (
-            <Loader2 className="size-4 text-purple-400 animate-spin" />
+            <Loader2 className="size-4 text-blue-300 animate-spin" />
           ) : (
-            <Plus className="size-4 text-slate-400 group-hover:text-purple-400" />
+            <Plus className="size-4 text-slate-400 group-hover:text-blue-300" />
           )}
         </button>
       </div>
 
       {/* Search */}
       <div className="relative px-3 py-3">
-        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus-within:border-purple-500/50 transition-all duration-200">
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 border border-white/10 focus-within:border-blue-400/50 transition-all duration-200">
           <Search className="size-3.5 text-slate-500 shrink-0" />
           <input
             type="text"
@@ -198,15 +198,15 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
         <button
           onClick={handleNewChat}
           disabled={isCreating}
-          className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-purple-600/20 to-purple-700/10 border border-purple-500/20 hover:border-purple-500/40 hover:from-purple-600/30 transition-all duration-200 group disabled:opacity-60"
+          className="flex items-center justify-center gap-2 w-full px-3 py-2.5 rounded-xl bg-gradient-to-r from-blue-500/20 to-blue-600/10 border border-blue-400/20 hover:border-blue-400/40 hover:from-blue-500/30 transition-all duration-200 group disabled:opacity-60"
         >
           {isCreating ? (
-            <Loader2 className="size-4 text-purple-400 animate-spin" />
+            <Loader2 className="size-4 text-blue-300 animate-spin" />
           ) : (
             <>
-              <Plus className="size-4 text-purple-400" />
-              <span className="text-sm text-purple-300 font-medium">New Chat</span>
-              <Sparkles className="size-3.5 text-purple-400/60 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
+              <Plus className="size-4 text-blue-300" />
+              <span className="text-sm text-blue-300 font-medium">New Chat</span>
+              <Sparkles className="size-3.5 text-blue-300/60 ml-auto opacity-0 group-hover:opacity-100 transition-opacity" />
             </>
           )}
         </button>
@@ -235,7 +235,7 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
             <p className="text-xs text-red-400 font-medium">{error}</p>
             <button
               onClick={loadChats}
-              className="mt-4 px-3 py-1.5 rounded bg-white/5 text-[10px] text-purple-400 border border-purple-500/20 hover:bg-white/10 transition-colors"
+              className="mt-4 px-3 py-1.5 rounded bg-white/5 text-[10px] text-blue-300 border border-blue-400/20 hover:bg-white/10 transition-colors"
             >
               تلاش دوباره
             </button>
@@ -243,9 +243,9 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
         ) : groupedChats.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <div className="relative mb-3">
-              <div className="absolute inset-0 rounded-full bg-purple-600/20 blur-2xl" />
-              <div className="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-500/20 to-purple-700/20 border border-purple-500/20">
-                <MessageSquare className="size-6 text-purple-400/60" />
+              <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-2xl" />
+              <div className="relative flex items-center justify-center w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-400/20 to-blue-600/20 border border-blue-400/20">
+                <MessageSquare className="size-6 text-blue-300/60" />
               </div>
             </div>
             <p className="text-sm text-slate-400 font-medium">No chats yet</p>
@@ -272,18 +272,18 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
                           className={cn(
                             "group relative flex w-full items-center gap-2.5 px-2.5 py-2.5 rounded-lg text-left transition-all duration-200",
                             isActive
-                              ? "bg-gradient-to-r from-purple-600/15 to-purple-700/5 border border-purple-500/20 shadow-lg shadow-purple-500/5"
+                              ? "bg-gradient-to-r from-blue-500/15 to-blue-600/5 border border-blue-400/20 shadow-lg shadow-blue-400/5"
                               : "hover:bg-white/5 border border-transparent"
                           )}
                         >
                           {isActive && (
-                            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-gradient-to-b from-purple-500 to-purple-700 rounded-full" />
+                            <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-gradient-to-b from-blue-400 to-blue-600 rounded-full" />
                           )}
                           <div className="flex items-center justify-center w-6 h-6 rounded bg-white/5 shrink-0">
                             <Youtube
                               className={cn(
                                 "size-3.5",
-                                isActive ? "text-purple-400" : "text-slate-500"
+                                isActive ? "text-blue-300" : "text-slate-500"
                               )}
                             />
                           </div>
@@ -301,7 +301,7 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
                             </p>
                           </div>
                           {isActive && (
-                            <div className="w-1.5 h-1.5 rounded-full bg-purple-400 shrink-0" />
+                            <div className="w-1.5 h-1.5 rounded-full bg-blue-300 shrink-0" />
                           )}
                         </Link>
                       </li>
@@ -319,12 +319,12 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
         <div className="space-y-1.5">
           <div className="flex items-center justify-between text-xs">
             <span className="text-slate-400 font-medium">Free Plan</span>
-            <span className="text-purple-400 font-semibold">68%</span>
+            <span className="text-blue-300 font-semibold">68%</span>
           </div>
           <Progress value={68} className="h-1 bg-white/10" />
         </div>
 
-        <button className="w-full py-2 rounded-lg border border-purple-500/30 bg-purple-600/5 text-xs font-medium text-purple-400 hover:bg-purple-600/10 hover:border-purple-500/50 transition-all duration-200">
+        <button className="w-full py-2 rounded-lg border border-blue-400/30 bg-blue-500/5 text-xs font-medium text-blue-300 hover:bg-blue-500/10 hover:border-blue-400/50 transition-all duration-200">
           <span className="flex items-center justify-center gap-2">
             <Crown className="size-3.5" />
             Upgrade to Pro
@@ -351,10 +351,10 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
             <img
               src={user.imageUrl}
               alt={user.fullName || "User"}
-              className="size-7 rounded-full ring-2 ring-purple-500/20"
+              className="size-7 rounded-full ring-2 ring-blue-400/20"
             />
           ) : (
-            <div className="size-7 rounded-full bg-gradient-to-br from-purple-600 to-purple-700 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-purple-500/20">
+            <div className="size-7 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-xs font-bold text-white shadow-lg shadow-blue-400/20">
               {user?.firstName?.[0] ?? "U"}
             </div>
           )}
@@ -374,11 +374,11 @@ export default function ChatSidebar({ onNavigate }: { onNavigate?: () => void })
           background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(124, 58, 237, 0.3);
+          background: rgba(59,130,246, 0.3);
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(124, 58, 237, 0.5);
+          background: rgba(59,130,246, 0.5);
         }
       `}</style>
     </aside>

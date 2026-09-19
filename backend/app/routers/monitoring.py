@@ -113,11 +113,9 @@ async def system_status_endpoint(
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
     with _system_status_lock:
-        # نوع‌دهی صریح به کش برای رفع خطای Mypy
         cached: dict[str, Any] | None = _system_status_cache.get(_SYSTEM_STATUS_CACHE_KEY)
         
     if cached is not None:
-        # پاس دادن متغیرها به صورت صریح
         return SystemStatusResponse(
             services=cached["services"],
             checked_at=cached["checked_at"],
@@ -154,8 +152,6 @@ async def system_status_endpoint(
 
     with _system_status_lock:
         _system_status_cache[_SYSTEM_STATUS_CACHE_KEY] = cache_payload
-
-    # ۳. برگرداندن شیء صریح بدون استفاده از **
     return SystemStatusResponse(
         services=services_list,
         checked_at=checked_at_str,

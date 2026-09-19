@@ -11,7 +11,6 @@ import React, {
 } from "react";
 import { useAuth } from "@clerk/nextjs";
 
-// ---------------- Types ----------------
 
 export interface DonutDatum {
   id: string;
@@ -86,8 +85,8 @@ type DashboardAction =
   | { type: "FETCH_VIDEO_METRICS_SUCCESS"; payload: VideoMetricsData }
   | { type: "FETCH_VIDEO_METRICS_FAILURE"; payload: string };
 
-// ---------------- Reducer ----------------
 
+// Reducer function
 const initialState: DashboardState = {
   workflowDistribution: [],
   workflowTimeframe: "all",

@@ -52,7 +52,6 @@ class ProcessVideoResponse(BaseModel):
 @router.post("/process-video", response_model=ProcessVideoResponse)
 async def process_video(
     request: VideoRequest,
-   
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ) -> ProcessVideoResponse:
     user_id = auth.user_id
