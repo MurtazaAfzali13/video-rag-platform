@@ -29,7 +29,8 @@ class ContextualizedQuery(BaseModel):
 
 class RerankedDoc(BaseModel):
     index: int = Field(..., description="0-based index of the document in the list it was given, exactly as provided.")
-    relevance_score: float = Field(..., ge=0.0, le=1.0, description="Relevance of this chunk to the query, 0=irrelevant, 1=perfectly relevant.")
+    relevance_score: float = Field(..., ge=0.0, le=1.0, 
+                                   description="Relevance of this chunk to the query, 0=irrelevant, 1=perfectly relevant.")
 
 # keep the list of these scored documents
 class RerankResult(BaseModel):
@@ -131,7 +132,9 @@ class FinalAnswerSchema(BaseModel):
         default="qa_response", description="Always set this to 'qa_response'."
     )
     answer: str = Field(...,
-        description="The main answer text in markdown format. Do NOT include raw URLs or raw timestamps inside this text.",)
+        description="The main answer text in markdown format. Do NOT include raw URLs. "
+            "Inline [MM:SS] citations ARE expected for video sources.",
+    )
     sources: List[SourceSchema] = Field(
         default=[],
         description="List of all sources (video timestamps and web links) used to generate this answer.",

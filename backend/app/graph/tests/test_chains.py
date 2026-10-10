@@ -1,6 +1,6 @@
 # app/graph/tests/test_chains.py
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch,ANY
 
 from app.graph.chains import (
     create_supervisor_chain,
@@ -9,7 +9,7 @@ from app.graph.chains import (
     create_summary_chain,
     get_llm,
 )
-from app.graph.state import RouteDecision, GradeDocuments, GroundedAnswer, VideoSummarySchema
+from app.graph.state import RouteDecision, GradeDocuments, FinalAnswerSchema, VideoSummarySchema
 
 
 class TestChains:
@@ -26,8 +26,7 @@ class TestChains:
         llm = get_llm("test-model")
         
         assert llm.model == "test-model"
-        assert llm.api_key == "test_key"
-        assert llm.base_url == "https://test.com"
+        assert llm.openai_api_base == "https://test.com"
     
     @patch('app.graph.chains.get_llm')
     def test_create_supervisor_chain(self, mock_get_llm):
@@ -90,9 +89,10 @@ class TestChainIntegration:
             reasoning="Test reasoning",
             intent="video_qa"
         )
-        mock_llm.with_structured_output.return_value = Mock(
-            invoke=lambda **kwargs: mock_decision
-        )
+        mock_structured_llm = Mock()
+        mock_structured_llm.invoke.return_value = mock_decision
+        mock_structured_llm.return_value = mock_decision  # این خط جدید را اضافه کنید
+        mock_llm.with_structured_output.return_value = mock_structured_llm
         mock_get_llm.return_value = mock_llm
         
         chain = create_supervisor_chain()

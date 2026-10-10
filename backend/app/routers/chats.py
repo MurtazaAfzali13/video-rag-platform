@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query, Depends
@@ -8,7 +9,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 
-from app.graph.workflow import get_agent_graph
+from app.graph.workflow import get_agent_graph, get_run_kwargs
+from app.graph.checkpointing import build_run_config
 from app.chat_store import (
     ChatStoreError,
     get_chat,
@@ -292,7 +294,11 @@ async def chat_endpoint(
         initial_state = ctx["initial_state"]
         is_first_interaction = ctx["is_first_interaction"]
 
-        result = await get_agent_graph().ainvoke(initial_state)
+        run_id = uuid.uuid4().hex
+        run_config = build_run_config(chat_id=target_chat_id, run_id=run_id, user_id=user_id)
+        logger.info("Run %s started (chat=%s)", run_id, target_chat_id)
+
+        result = await get_agent_graph().ainvoke(initial_state, run_config, **get_run_kwargs())
 
         logger.info("=== LANGGRAPH FINAL OUTPUT STATE ===")
         logger.info(f"Next Node: {result.get('next_node')}")
@@ -352,15 +358,21 @@ async def chat_stream_endpoint(
     initial_state = ctx["initial_state"]
     is_first_interaction = ctx["is_first_interaction"]
 
+    run_id = uuid.uuid4().hex
+    run_config = build_run_config(chat_id=target_chat_id, run_id=run_id, user_id=user_id)
+
     async def event_generator():
         graph = get_agent_graph()
         final_result: dict = {}
+        logger.info("Run %s started (chat=%s, stream)", run_id, target_chat_id)
 
         def sse(event: str, data: dict) -> str:
             return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
         try:
-            async for event in graph.astream_events(initial_state, version="v2"):
+            async for event in graph.astream_events(
+                initial_state, run_config, version="v2", **get_run_kwargs()
+            ):
                 kind = event.get("event")
 
                 if kind == "on_chain_start" and event.get("name") in NODE_LABELS_FA:
@@ -382,8 +394,8 @@ async def chat_stream_endpoint(
             )
 
         except Exception as exc:
-            logger.exception("SSE stream failed for chat %s", target_chat_id)
-            yield sse("error", {"detail": str(exc)})
+            logger.exception("SSE stream failed for chat %s (run %s)", target_chat_id, run_id)
+            yield sse("error", {"detail": str(exc), "run_id": run_id})
 
     return StreamingResponse(
         event_generator(),
