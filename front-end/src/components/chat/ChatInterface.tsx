@@ -86,6 +86,60 @@ function formatMessageTime(iso: string): string {
 
 
 
+/**
+ * Turns "[MM:SS]" / "[H:MM:SS]" citations written by the model into markdown links
+ * ("[MM:SS](#t=<seconds>)") so they become clickable. Code spans/fences are left untouched,
+ * existing links "[..](..)" and ranges like "[00:25-01:22]" are not matched.
+ */
+function linkifyTimestamps(text: string): string {
+  return text
+    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
+    .map((part, i) =>
+      i % 2 === 1
+        ? part
+        : part.replace(
+            /\[(\d{1,3}):(\d{2})(?::(\d{2}))?\](?!\()/g,
+            (_m, a: string, b: string, c?: string) => {
+              const secs = c !== undefined ? +a * 3600 + +b * 60 + +c : +a * 60 + +b;
+              const label = c !== undefined ? `${a}:${b}:${c}` : `${a}:${b}`;
+              return `[${label}](#t=${secs})`;
+            }
+          )
+    )
+    .join("");
+}
+
+function buildAnswerComponents(onJumpToTime: (seconds: number) => void) {
+  return {
+    a: ({ node, href, children, ...props }: any) => {
+      if (typeof href === "string" && href.startsWith("#t=")) {
+        const seconds = Number(href.slice(3));
+        return (
+          <button
+            type="button"
+            onClick={() => onJumpToTime(Number.isFinite(seconds) ? seconds : 0)}
+            className="mx-0.5 inline-flex items-center rounded-md border border-blue-400/40 bg-blue-500/15 px-1.5 py-0.5 align-baseline font-mono text-[11px] font-medium text-blue-300 transition-colors hover:border-blue-300/70 hover:bg-blue-500/30 hover:text-blue-100"
+            aria-label={`Jump to ${String(children)}`}
+          >
+            {children}
+          </button>
+        );
+      }
+      return (
+        <a
+          href={href}
+          {...props}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="break-words text-blue-300 hover:underline hover:underline-offset-2"
+        >
+          {children}
+        </a>
+      );
+    },
+  };
+}
+
 const TimestampPill = memo(function TimestampPill({
   time,
   onClick,
@@ -206,8 +260,11 @@ const AssistantContent = memo(function AssistantContent({
     return (
       <div className="flex w-full flex-col gap-3 text-sm">
         <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
-            {parsedContent.answer}
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={buildAnswerComponents(onJumpToTime)}
+          >
+            {linkifyTimestamps(parsedContent.answer ?? "")}
           </ReactMarkdown>
         </div>
 
@@ -232,6 +289,9 @@ const AssistantContent = memo(function AssistantContent({
                       title={source.title || undefined}
                     >
                       <span className="shrink-0 font-mono">{formatTimestamp(source.start_time || 0)}</span>
+                      {source.title && (
+                        <span className="max-w-[160px] truncate text-blue-200/80">{source.title}</span>
+                      )}
                       <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                     </button>
                   );
@@ -543,7 +603,7 @@ export default function ChatInterface({
 
             
               {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
-                <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
+                <motion.div key="typing-indicator" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
                  
                   {currentNode ? (
                     <NodeProgressIndicator currentNode={currentNode} />

@@ -12,6 +12,8 @@ import httpx
 from app.config import get_settings
 from app.graph.retry_utils import call_with_retry, HTTP_RETRYABLE_EXCEPTIONS
 
+from app.graph.retry_utils import call_with_retry, HTTP_RETRYABLE_EXCEPTIONS, should_retry_http_response
+
 logger = logging.getLogger(__name__)
 
 _TIMEOUT = httpx.Timeout(connect=8.0, read=20.0, write=10.0, pool=5.0)
@@ -51,6 +53,7 @@ def _request(client: httpx.Client, method: str, url: str, **kwargs: Any) -> http
             min_wait=1.0,
             max_wait=8.0,
             exceptions=HTTP_RETRYABLE_EXCEPTIONS,
+            retry_if_result=lambda r: should_retry_http_response(method, r),
         )
     except HTTP_RETRYABLE_EXCEPTIONS as exc:
         logger.error("Supabase %s %s failed after retries: %s", method.upper(), url, exc)

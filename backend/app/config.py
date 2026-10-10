@@ -46,11 +46,8 @@ class Settings:
         self.supabase_service_role_key = os.getenv(
             "SUPABASE_SERVICE_ROLE_KEY", ""
         ).strip()
+        self.supabase_db_url = os.getenv("SUPABASE_DB_URL", "").strip()
 
-        # --- 🛡️ Clerk (JWT verification) ---
-        # همان چیزی که در .env شما با نام CLERK_FRONTEND_API ست شده — این همان "issuer" ای
-        # است که در JWT کلرک به‌عنوان claim `iss` قرار می‌گیرد و JWKS از زیرمسیر
-        # `{clerk_frontend_api}/.well-known/jwks.json` آن قابل دریافت است.
         self.clerk_frontend_api = os.getenv("CLERK_FRONTEND_API", "").strip()
         # alias با نام رایج‌تر issuer_url، تا در بقیه‌ی کد (auth.py) با هر دو اسم قابل خواندن باشد
         self.clerk_issuer_url = self.clerk_frontend_api

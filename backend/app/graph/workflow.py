@@ -6,6 +6,7 @@ from app.graph.nodes import (
     supervisor_node,
     retriever_node,
     reranker_node,
+    parent_expander_node,
     validator_node,
     web_search_node,
     generate_answer_node,
@@ -13,18 +14,19 @@ from app.graph.nodes import (
 )
 from app.graph.state import AgentState
 
-from app.graph.router import route_from_supervisor,route_from_validator
+from app.graph.router import route_from_supervisor, route_from_validator
 
 logger = logging.getLogger(__name__)
 
 
-def create_agent_graph():
+def create_agent_graph(checkpointer=None):
     workflow = StateGraph(AgentState)
 
     workflow.add_node("contextualize", contextualize_node)
     workflow.add_node("supervisor", supervisor_node)
     workflow.add_node("retriever", retriever_node)
     workflow.add_node("reranker", reranker_node)
+    workflow.add_node("parent_expander", parent_expander_node)
     workflow.add_node("validator", validator_node)
     workflow.add_node("web_search", web_search_node)
     workflow.add_node("generator", generate_answer_node)
@@ -42,8 +44,10 @@ def create_agent_graph():
         },
     )
 
+    # Small-to-Big: children -> rerank children -> expand to parents -> validate
     workflow.add_edge("retriever", "reranker")
-    workflow.add_edge("reranker", "validator")
+    workflow.add_edge("reranker", "parent_expander")
+    workflow.add_edge("parent_expander", "validator")
 
     workflow.add_conditional_edges(
         "validator",
@@ -59,7 +63,7 @@ def create_agent_graph():
     workflow.add_edge("generator", END)
     workflow.add_edge("video_summary", END)
 
-    return workflow.compile()
+    return workflow.compile(checkpointer=checkpointer)
 
 
 try:
@@ -68,6 +72,31 @@ try:
 except Exception as e:
     logger.error("Failed to initialize Agent Graph eagerly: %s", e)
     agent_graph = None
+
+
+_checkpointing_enabled = False
+
+
+def configure_agent_graph(checkpointer=None) -> None:
+    """Rebuild the compiled graph with a checkpointer.
+
+    Call ONCE from the FastAPI lifespan, after `init_checkpointer()`. With `None`
+    (checkpointing disabled/unavailable) the graph behaves exactly as before.
+    """
+    global agent_graph, _checkpointing_enabled
+    agent_graph = create_agent_graph(checkpointer)
+    _checkpointing_enabled = checkpointer is not None
+    logger.info("Agent graph configured (checkpointing=%s).", _checkpointing_enabled)
+
+
+def get_run_kwargs() -> dict:
+    """Extra kwargs for ainvoke/astream_events. `durability` only when a checkpointer exists
+    (LangGraph emits a warning on every call otherwise)."""
+    if not _checkpointing_enabled:
+        return {}
+    from app.graph.checkpointing import CHAT_DURABILITY
+
+    return {"durability": CHAT_DURABILITY}
 
 
 def get_agent_graph():
@@ -84,13 +113,13 @@ if __name__ == "__main__":
     print("Graph compiled successfully!")
     try:
         png_data = graph.get_graph().draw_mermaid_png()
-        
+
         output_file = "agent_architecture.png"
         with open(output_file, "wb") as f:
             f.write(png_data)
-            
+
         print(f"Graph image successfully saved as '{output_file}'")
-        
+
     except Exception as e:
         print(f"Failed to generate or save graph image: {e}")
         print("Note: draw_mermaid_png() requires an active internet connection as it uses the Mermaid.ink API by default.")

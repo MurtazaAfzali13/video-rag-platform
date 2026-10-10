@@ -7,6 +7,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from app.graph.checkpointing import init_checkpointer, close_checkpointer
+from app.graph.workflow import configure_agent_graph
+
 from app.config import get_settings
 from app.routers import video, chats,dashboard,monitoring,users_route,video_route
 
@@ -19,7 +22,7 @@ class HealthResponse(BaseModel):
 
 
 
-
+# Lifespan Management
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     settings = get_settings()
@@ -30,9 +33,13 @@ async def lifespan(app: FastAPI):
     try:
         settings.validate_for_auth()
     except ValueError as exc:
-    
         logger.warning("Startup validation: %s", exc)
-    yield
+    saver = await init_checkpointer()
+    configure_agent_graph(saver)
+    try:
+        yield
+    finally:
+        await close_checkpointer(saver)
 
 
 def create_app() -> FastAPI:
