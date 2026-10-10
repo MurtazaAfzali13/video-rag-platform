@@ -3,8 +3,6 @@ import pytest
 from unittest.mock import Mock, patch
 
 from app.graph.nodes import (
-    CHILD_K_GENERAL,
-    CHILD_K_SINGLE_VIDEO,
     supervisor_node,
     retriever_node,
     validator_node,
@@ -12,7 +10,7 @@ from app.graph.nodes import (
     generate_answer_node,
     video_summary_node,
 )
-from app.graph.state import AgentState, VideoSummarySchema
+from app.graph.state import AgentState
 
 
 class TestNodes:
@@ -51,28 +49,26 @@ class TestNodes:
     @patch('app.graph.nodes._get_embeddings')
     @patch('app.graph.nodes.get_settings')
     def test_retriever_node_single_video(self, mock_get_settings, mock_embeddings, mock_vector_store):
-        """Retriever returns CHILD chunks (with parent linkage) for a single video."""
+        """Test retriever node with single video scope."""
         mock_settings = Mock()
         mock_settings.index_name = "test_index"
         mock_settings.pinecone_api_key = "test_key"
         mock_get_settings.return_value = mock_settings
-
+        
+        mock_retriever = Mock()
         mock_doc = Mock()
         mock_doc.page_content = "Test content"
         mock_doc.metadata = {
             "video_id": "video456",
             "title": "Test Video",
-            "start_time": 120,
-            "parent_id": "video456_p0003",
-            "parent_idx": 3,
-            "parent_count": 10,
-            "child_pos": 0,
-            "child_count": 9,
+            "start_time": 120
         }
-        instance = Mock()
-        instance.similarity_search_with_score.return_value = [(mock_doc, 0.87)]
-        mock_vector_store.return_value = instance
-
+        mock_retriever.invoke.return_value = [mock_doc]
+        
+        mock_vector_store_instance = Mock()
+        mock_vector_store_instance.as_retriever.return_value = mock_retriever
+        mock_vector_store.return_value = mock_vector_store_instance
+        
         state: AgentState = {
             "query": "What is the main concept?",
             "search_scope": "single_video",
@@ -83,53 +79,21 @@ class TestNodes:
             "documents": None,
             "response": None,
         }
-
+        
         result = retriever_node(state)
-
-        instance.similarity_search_with_score.assert_called_once()
-        _, kwargs = instance.similarity_search_with_score.call_args
-        assert kwargs["filter"] == {"video_id": {"$eq": "video456"}}
-        assert kwargs["k"] == CHILD_K_SINGLE_VIDEO
-
-        doc = result["documents"][0]
-        assert doc["page_content"] == "Test content"
-        assert doc["video_id"] == "video456"
-        assert doc["start_time"] == 120.0
-        assert doc["parent_id"] == "video456_p0003"
-        assert doc["child_pos"] == 0
-        assert doc["vector_score"] == 0.87
-        assert doc["source_type"] == "video"
-        assert "retriever_time_ms" in result
-
-    @patch('app.graph.nodes.PineconeVectorStore')
-    @patch('app.graph.nodes._get_embeddings')
-    @patch('app.graph.nodes.get_settings')
-    def test_retriever_node_general_scope_and_legacy_vectors(self, mock_get_settings, mock_embeddings, mock_vector_store):
-        """General scope searches all videos; vectors without parent metadata still work."""
-        mock_settings = Mock()
-        mock_settings.index_name = "i"
-        mock_settings.pinecone_api_key = "k"
-        mock_get_settings.return_value = mock_settings
-
-        legacy = Mock()
-        legacy.page_content = "old chunk"
-        legacy.metadata = {"video_id": "v1", "title": "T", "start_time": 5}
-        instance = Mock()
-        instance.similarity_search_with_score.return_value = [(legacy, 0.5)]
-        mock_vector_store.return_value = instance
-
-        result = retriever_node({
-            "query": "q", "search_scope": "general", "user_id": "u", "video_id": None,
-            "messages": [], "next_node": None, "documents": None, "response": None,
-        })
-
-        _, kwargs = instance.similarity_search_with_score.call_args
-        assert kwargs["filter"] is None
-        assert kwargs["k"] == CHILD_K_GENERAL
-        doc = result["documents"][0]
-        assert doc["parent_id"] is None
-        assert doc["page_content"] == "old chunk"
-
+        
+        assert "documents" in result
+        assert len(result["documents"]) == 1
+        assert result["documents"][0]["video_id"] == "video456"
+        
+        # Verify correct search kwargs
+        mock_vector_store_instance.as_retriever.assert_called_with(
+            search_kwargs={
+                "filter": {"video_id": {"$eq": "video456"}},
+                "k": 4
+            }
+        )
+    
     @patch('app.graph.nodes.create_validator_chain')
     def test_validator_node_with_documents(self, mock_create_chain):
         """Test validator node with relevant documents."""
@@ -252,7 +216,6 @@ class TestNodes:
         mock_summary.key_takeaways = []
         mock_summary.academic_conclusion = "Conclusion"
         mock_summary.model_dump_json.return_value = '{"title": "Test Summary"}'
-        mock_summary.model_dump.return_value = {"title": "Test Summary", "overall_summary": "Summary content"}
         mock_chain.invoke.return_value = mock_summary
         mock_create_chain.return_value = mock_chain
         
@@ -271,4 +234,4 @@ class TestNodes:
         
         assert "response" in result
         assert isinstance(result["response"], str)
-        mock_fetch_context.assert_called_once_with("user123", "video456", "Summarize this video")
+        mock_fetch_context.assert_called_once_with("user123", "video456", "Summarize this video", k=4)

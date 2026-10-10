@@ -131,18 +131,24 @@ class TestWorkflowIntegration:
         mock_settings.return_value.index_name = "test"
         mock_settings.return_value.pinecone_api_key = "test"
         
-        mock_retriever = Mock()
         mock_doc = Mock()
         mock_doc.page_content = "Test content"
         mock_doc.metadata = {
             "video_id": "video456",
             "title": "Test Video",
-            "start_time": 120
+            "start_time": 120,
+            "parent_id": "parent123",
         }
-        mock_retriever.invoke.return_value = [mock_doc]
         
         mock_vs_instance = Mock()
-        mock_vs_instance.as_retriever.return_value = mock_retriever
+        # Mocking similarity_search_with_score to return a list of (document, score) tuples
+        mock_vs_instance.similarity_search_with_score.return_value = [(mock_doc, 0.9)]
+        
+        mock_parent_doc = Mock()
+        mock_parent_doc.page_content = "Parent context"
+        # Mocking pinecone parent retrieval
+        mock_vs_instance._index.fetch.return_value = {"vectors": {"parent123": {"metadata": {"text": "Parent context"}}}}
+
         mock_vector_store.return_value = mock_vs_instance
         
         # Create and invoke graph
