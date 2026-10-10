@@ -1,4 +1,8 @@
-"""Supabase-backed parent-chunk store for Small-to-Big retrieval (backend-only)."""
+"""Supabase-backed parent-chunk store for Small-to-Big retrieval (backend-only).
+
+Parents are SHARED across users (one copy per video). The `user_id` column only records
+who triggered the ingestion; access control lives in the `user_videos` table.
+"""
 
 from __future__ import annotations
 
@@ -63,13 +67,14 @@ def _request(method: str, url: str, **kwargs: Any) -> httpx.Response:
     return response
 
 
-def delete_video_parents(video_id: str, user_id: str) -> None:
+def delete_video_parents(video_id: str) -> None:
+    """Parents are shared across users now (one copy per video)."""
     url, headers = _config()
     _request(
         "DELETE",
         url,
         headers=headers,
-        params={"video_id": f"eq.{video_id}", "user_id": f"eq.{user_id}"},
+        params={"video_id": f"eq.{video_id}"},
     )
 
 
@@ -89,8 +94,12 @@ def save_parents(rows: list[dict[str, Any]]) -> None:
         )
 
 
-def fetch_parents(parent_ids: list[str], user_id: str) -> dict[str, dict[str, Any]]:
-    """Fetch parents by ID in ONE query. Always scoped to the owning user."""
+def fetch_parents(parent_ids: list[str]) -> dict[str, dict[str, Any]]:
+    """Fetch parents by ID in ONE query.
+
+    Parents are shared across users. Access control is enforced UPSTREAM: parent IDs only
+    come from Pinecone hits that were filtered to the user's own videos (see retriever_node).
+    """
     ids = sorted(set(parent_ids))
     if not ids:
         return {}
@@ -102,15 +111,17 @@ def fetch_parents(parent_ids: list[str], user_id: str) -> dict[str, dict[str, An
         headers=headers,
         params={
             "id": f"in.({quoted})",
-            "user_id": f"eq.{user_id}",
             "select": "id,video_id,idx,start_time,end_time,content",
         },
     )
     return {row["id"]: row for row in response.json()}
 
 
-def fetch_video_parents(video_id: str, user_id: str) -> list[dict[str, Any]]:
-    """All parents of one video in chronological order (used for summaries)."""
+def fetch_video_parents(video_id: str) -> list[dict[str, Any]]:
+    """All parents of one video in chronological order (used for summaries).
+
+    Caller must have verified the user has access (user_has_video).
+    """
     url, headers = _config()
     response = _request(
         "GET",
@@ -118,7 +129,6 @@ def fetch_video_parents(video_id: str, user_id: str) -> list[dict[str, Any]]:
         headers=headers,
         params={
             "video_id": f"eq.{video_id}",
-            "user_id": f"eq.{user_id}",
             "select": "id,idx,start_time,end_time,content",
             "order": "idx.asc",
             "limit": "5000",
