@@ -21,6 +21,7 @@ from app.graph.state import (
 )
 from app.ingestion import _get_embeddings, format_ts
 from app.parent_store import ParentStoreError, fetch_parents, fetch_video_parents, make_parent_id
+from app.video_registry import SHARED_NAMESPACE, list_user_video_ids, user_has_video
 
 from app.graph.chains import (
     create_contextualize_chain,
@@ -53,13 +54,14 @@ def _resolved_query(state: AgentState) -> str:
     return state.get("standalone_query") or state["query"]
 
 
-def _get_vector_store(user_id: str) -> PineconeVectorStore:
+def _get_vector_store() -> PineconeVectorStore:
+    """Shared namespace for all users; per-user isolation is done by a metadata filter."""
     settings = get_settings()
     return PineconeVectorStore(
         index_name=settings.index_name,
         embedding=_get_embeddings(),
         pinecone_api_key=settings.pinecone_api_key,
-        namespace=user_id,
+        namespace=SHARED_NAMESPACE,
     )
 
 
@@ -73,9 +75,9 @@ def _markers(content: str) -> list[tuple[int, str]]:
     return [(int(m) * 60 + int(s), text) for m, s, text in _MARKER_RE.findall(content or "")]
 
 
-def _fetch_video_context_legacy(user_id: str, video_id: str, query: str, *, k: int = 8) -> str:
+def _fetch_video_context_legacy(video_id: str, query: str, *, k: int = 8) -> str:
     """Fallback for videos ingested BEFORE Small-to-Big (no parent rows)."""
-    retriever = _get_vector_store(user_id).as_retriever(
+    retriever = _get_vector_store().as_retriever(
         search_kwargs={"filter": {"video_id": {"$eq": video_id}}, "k": k}
     )
     parts = []
@@ -97,14 +99,17 @@ def _fetch_video_context(
     happen to match the query words. If the transcript is too long, lines are
     sampled evenly across the video instead of cutting the tail.
     """
+    if not user_has_video(user_id, video_id):
+        raise PermissionError(f"Video {video_id} is not linked to this user.")
+
     try:
-        parents = fetch_video_parents(video_id, user_id)
+        parents = fetch_video_parents(video_id)
     except ParentStoreError as exc:
         logger.warning("Summary: parent store unavailable (%s); using similarity fallback.", exc)
         parents = []
 
     if not parents:
-        return _fetch_video_context_legacy(user_id, video_id, query)
+        return _fetch_video_context_legacy(video_id, query)
 
     lines = [ln for p in parents for ln in p["content"].split("\n") if ln.strip()]
     total = sum(len(ln) + 1 for ln in lines)
@@ -164,15 +169,27 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
     video_id = state["video_id"]
     query = _resolved_query(state)
     search_scope = state.get("search_scope", "single_video")
-    vector_store = _get_vector_store(user_id)
+    vector_store = _get_vector_store()
+
+    # ACCESS CONTROL: the Pinecone namespace is shared, so isolation is enforced here.
+    # Fail-closed: if the lookup raises, the request fails instead of leaking data.
+    allowed = list_user_video_ids(user_id)
+
+    def _empty() -> dict[str, Any]:
+        return {"documents": [], "retriever_time_ms": int((time.time() - start_time) * 1000)}
 
     if search_scope == "single_video" and video_id:
+        if video_id not in allowed:
+            logger.warning("User %s requested video %s without access", user_id, video_id)
+            return _empty()
         logger.info(f"Searching strictly inside video: {video_id}")
         metadata_filter = {"video_id": {"$eq": video_id}}
         k = CHILD_K_SINGLE_VIDEO
     else:
-        logger.info("Searching across ALL user videos (General Scope)")
-        metadata_filter = None
+        if not allowed:
+            return _empty()
+        logger.info("Searching across ALL of the user's videos (General Scope)")
+        metadata_filter = {"video_id": {"$in": allowed}}
         k = CHILD_K_GENERAL
 
     results = vector_store.similarity_search_with_score(query, k=k, filter=metadata_filter)
@@ -300,7 +317,6 @@ def parent_expander_node(state: AgentState) -> dict[str, Any]:
     """
     logger.info("Entering Parent Expander Node...")
     start = time.time()
-    user_id = state["user_id"]
     children = state.get("documents") or []
     other_ms = state.get("other_time_ms", 0)
 
@@ -348,7 +364,7 @@ def parent_expander_node(state: AgentState) -> dict[str, Any]:
     rows: dict[str, dict[str, Any]] = {}
     if wanted:
         try:
-            rows = fetch_parents(sorted(wanted), user_id)
+            rows = fetch_parents(sorted(wanted))
         except ParentStoreError as exc:
             logger.warning("Parent store unavailable (%s); continuing with child chunks.", exc)
 

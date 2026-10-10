@@ -1,7 +1,8 @@
-"""Small-to-Big ingestion: precise child chunks -> Pinecone, context-rich parents -> Supabase."""
+"""Small-to-Big ingestion: precise child chunks -> Pinecone (shared namespace), context-rich parents -> Supabase."""
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import re
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ from langchain_pinecone import PineconeVectorStore
 
 from app.config import get_settings
 from app.parent_store import delete_video_parents, make_parent_id, save_parents
+from app.video_registry import SHARED_NAMESPACE
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,12 @@ def _render(lines: list[_Line]) -> str:
     return "\n".join(f"[{format_ts(l.start)}] {l.text}" for l in lines)
 
 
+def transcript_hash(transcript_data: list[dict[str, Any]]) -> str:
+    """sha256 of the normalized transcript. Used to detect changed captions (NOT a security measure)."""
+    rendered = _render(_build_lines(transcript_data))
+    return hashlib.sha256(rendered.encode("utf-8")).hexdigest()
+
+
 def format_segments_for_llm(
     transcript_data: list[dict[str, Any]],
     max_chars: int = 12000,
@@ -176,7 +184,6 @@ def process_and_ingest_video(
                     page_content=_with_title(video_title, text),
                     metadata={
                         "video_id": video_id,
-                        "user_id": user_id,
                         "video_title": video_title,
                         "parent_id": parent_id,
                         "parent_idx": p_idx,
@@ -194,11 +201,11 @@ def process_and_ingest_video(
         index_name=settings.index_name,
         embedding=_get_embeddings(),
         pinecone_api_key=settings.pinecone_api_key,
-        namespace=user_id,
+        namespace=SHARED_NAMESPACE,
     )
 
     # Clean re-ingestion: drop stale parents and any legacy (pre Small-to-Big) vectors.
-    delete_video_parents(video_id, user_id)
+    delete_video_parents(video_id)
     try:
         store.delete(filter={"video_id": {"$eq": video_id}})
     except Exception as exc:  # not every Pinecone index type supports delete-by-metadata
