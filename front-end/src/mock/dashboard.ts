@@ -55,7 +55,7 @@ export const metrics: DashboardMetric[] = [
   {
     id: "users-online",
     label: "Users Online",
-    value: "128",
+    value: "1",
     rawValue: 1,
     change: 12.5,
     trend: "up",
@@ -67,7 +67,7 @@ export const metrics: DashboardMetric[] = [
     id: "questions-today",
     label: "Questions",
     value: "4",
-    rawValue: 4328,
+    rawValue: 2,
     change: 18.2,
     trend: "up",
     icon: MessageSquare,
@@ -88,8 +88,8 @@ export const metrics: DashboardMetric[] = [
   {
     id: "web-searches",
     label: "Web Searches",
-    value: "438",
-    rawValue: 438,
+    value: "0",
+    rawValue: 0,
     change: 23.1,
     trend: "up",
     icon: Globe,
