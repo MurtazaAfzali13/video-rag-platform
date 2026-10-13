@@ -1,7 +1,3 @@
-"""Supabase-backed video registry: dedup/cache, single-flight claim, user<->video links.
-
-NOTE: this is a NEW file. It is separate from `app/video_store.py` (dashboard RPCs).
-"""
 
 from __future__ import annotations
 
@@ -16,15 +12,10 @@ from app.parent_store import ParentStoreError, _request
 
 logger = logging.getLogger(__name__)
 
-# Bump when chunking parameters change (LINE_TARGET_CHARS, PARENT_LINES, ...):
-# every cached video with a lower version is re-indexed on its next upload.
 INGEST_VERSION = 1
 
-# One shared Pinecone namespace for ALL users. Access control is done with the
-# `user_videos` table + a metadata filter at retrieval time (see nodes.retriever_node).
 SHARED_NAMESPACE = "videos"
 
-# Same exception type as parent_store so callers can catch both with one except.
 VideoRegistryError = ParentStoreError
 
 
@@ -124,7 +115,7 @@ def mark_video_failed(video_id: str) -> None:
             params={"id": f"eq.{video_id}"},
             json={"ingest_status": "failed"},
         )
-    except VideoRegistryError as exc:  # the stale-claim timeout in SQL is the safety net
+    except VideoRegistryError as exc:  
         logger.error("Could not mark video %s as failed: %s", video_id, exc)
 
 

@@ -242,7 +242,11 @@ def save_message(
 
 
 def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
-    
+    """Oldest-first messages of a chat (used for DISPLAY, e.g. GET /chats/{id}/messages).
+
+    NOTE: with `limit`, this returns the OLDEST `limit` rows. For building LLM history
+    use `list_recent_messages` instead.
+    """
     with httpx.Client(timeout=_TIMEOUT) as client:
         response = _request(
             client,
@@ -261,6 +265,35 @@ def list_messages(chat_id: str, *, limit: int = 200) -> list[dict[str, Any]]:
         raise ChatStoreError(response.text)
 
     return response.json()
+
+
+def list_recent_messages(chat_id: str, *, limit: int = 8) -> list[dict[str, Any]]:
+    """The NEWEST `limit` messages of a chat, returned in chronological order (old -> new).
+
+    The newest rows are selected DB-side (ORDER BY created_at DESC LIMIT n) and then
+    reversed here, so a long chat never loads more than `limit` rows and the window is
+    always the END of the conversation. Only `role` and `content` are selected.
+    """
+    with httpx.Client(timeout=_TIMEOUT) as client:
+        response = _request(
+            client,
+            "get",
+            f"{_base_url()}/rest/v1/messages",
+            headers=_headers(get_settings().supabase_service_role_key),
+            params={
+                "chat_id": f"eq.{chat_id}",
+                "select": "role,content",
+                "order": "created_at.desc",
+                "limit": str(limit),
+            },
+        )
+
+    if response.status_code >= 400:
+        raise ChatStoreError(response.text)
+
+    rows = response.json()
+    rows.reverse()
+    return rows
 
 
 def derive_chat_title(query: str) -> str:
