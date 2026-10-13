@@ -37,12 +37,7 @@ function timeAgo(isoDate: string): string {
   return "just now";
 }
 
-/**
- * We deliberately never render an <iframe> here — only the static YouTube
- * thumbnail image — so a grid of N videos costs N image requests instead of
- * N embedded players. The real <iframe> only mounts inside VideoModal, once
- * a user actually clicks a card.
- */
+
 export function VideoCard({ video, index, onPlay }: VideoCardProps) {
   const [thumbnailSrc, setThumbnailSrc] = useState(
     `https://img.youtube.com/vi/${video.youtube_id}/maxresdefault.jpg`

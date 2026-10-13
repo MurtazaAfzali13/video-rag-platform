@@ -18,7 +18,13 @@ interface SeekTrigger {
   time: number;
   triggeredAt: number;
 }
-
+export interface VideoItem {
+  id: string;
+  youtube_id: string;
+  title: string;
+  created_at: string;
+  [key: string]: any; 
+}
 interface VideoContextType {
   activeVideoId: string | null;
   setActiveVideoId: (id: string | null) => void;

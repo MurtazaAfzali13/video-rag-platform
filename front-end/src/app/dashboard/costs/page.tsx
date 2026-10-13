@@ -1,5 +1,5 @@
 import { DashboardShell } from "@/components/dashboard/DashboardShell";
-import { CostBreakdownCard } from "@/components/dashboard/charts";
+import { CostBreakdownCard } from "@/components/dashboard/charts/CostBreakdownCard";
 
 export const metadata = { title: "Costs · VidBrain" };
 

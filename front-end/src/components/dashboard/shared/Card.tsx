@@ -2,15 +2,14 @@
 
 import { motion, type HTMLMotionProps } from "framer-motion";
 import { cn } from "@/lib/dashboard-cn";
+import { type ReactNode } from "react";
 
 interface CardProps extends HTMLMotionProps<"div"> {
   glow?: boolean;
+  children?: ReactNode; 
 }
 
-/**
- * Base glassmorphism surface used by every widget on the dashboard.
- * Dark translucent background, soft border, subtle inner highlight.
- */
+
 export function Card({ className, glow = false, children, ...props }: CardProps) {
   return (
     <motion.div

@@ -205,8 +205,8 @@ export default function ChatPage() {
               }));
 
             if (newVideoItems.length) {
-              const existingTimes = new Set(timelineItems.map((t) => t.time));
-              const merged = [...timelineItems, ...newVideoItems.filter((t) => !existingTimes.has(t.time))];
+              const existingTimes = new Set(timelineItems.map((t:any) => t.time));
+              const merged = [...timelineItems, ...newVideoItems.filter((t:any) => !existingTimes.has(t.time))];
               
               setTimelineItems(
                 merged.sort((a, b) => parseTimestampToSeconds(a.time) - parseTimestampToSeconds(b.time))
