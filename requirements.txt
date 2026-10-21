@@ -1,0 +1,43 @@
+# ==========================================
+# Core Web Framework & Server
+# ==========================================
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.3
+pydantic-settings>=2.1.0
+httpx>=0.26.0
+
+# ==========================================
+# LangGraph & AI Orchestration
+# ==========================================
+langchain-core>=0.1.23
+langchain-openai>=0.0.5
+langchain-community>=0.0.19
+langgraph>=0.0.26
+
+# ==========================================
+# Agent Memory & Checkpointing (Postgres)
+# ==========================================
+# psycopg[binary] is crucial for cloud deployments to avoid C-compiler errors
+psycopg[binary,pool]>=3.1.18
+langgraph-checkpoint-postgres>=1.0.0
+
+# ==========================================
+# Vector Database (Pinecone)
+# ==========================================
+pinecone-client>=3.0.2
+langchain-pinecone>=0.0.2
+
+# ==========================================
+# External Tools & Integrations
+# ==========================================
+youtube-transcript-api>=0.6.2
+tavily-python>=0.3.1
+
+# ==========================================
+# ML Models (Commented out for Free-Tier RAM limits)
+# ==========================================
+# برای استفاده از Cross-Encoder محلی (Reranker) این بخش را از کامنت خارج کنید.
+# توجه: نصب این کتابخانه‌ها به حداقل ۱ تا ۲ گیگابایت RAM در سرور (Render/Railway) نیاز دارد.
+# sentence-transformers>=2.3.1
+# torch>=2.2.0
