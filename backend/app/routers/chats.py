@@ -32,13 +32,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["Chat"])
 
-# --- Chat history budget (context-window management) ---
-# History is only used by `contextualize_node` (query rewriting), but we still bound it
-# so a huge message can never inflate the prompt / cost of that call.
-CHAT_HISTORY_TURNS = 4            # 4 turns (user + assistant) = up to 8 messages
-HISTORY_MSG_MAX_CHARS = 800       # per-message cap inside the history
-HISTORY_TOTAL_MAX_CHARS = 4000    # hard cap for the whole history
-MAX_QUERY_CHARS = 4000            # cap for the user's own question
+CHAT_HISTORY_TURNS = 4           
+HISTORY_MSG_MAX_CHARS = 800     
+HISTORY_TOTAL_MAX_CHARS = 4000   
+MAX_QUERY_CHARS = 4000          
 
 
 # --- Pydantic Schemas ---
@@ -89,7 +86,7 @@ class MessageRecord(BaseModel):
 # --- Helpers ---
 
 def _extract_display_text(raw_content: str) -> str:
- 
+    # ... JSON parsing ...
     try:
         parsed = json.loads(raw_content)
     except (json.JSONDecodeError, TypeError):
@@ -106,15 +103,7 @@ def _extract_display_text(raw_content: str) -> str:
 
 
 def _build_chat_history(messages: list[dict], *, max_turns: int = CHAT_HISTORY_TURNS) -> list[BaseMessage]:
-    """Build a bounded history for the contextualize chain.
-
-    - Window: the last `max_turns` turns (1 turn = user + assistant = 2 messages).
-    - Each message is truncated to HISTORY_MSG_MAX_CHARS; the whole history is capped by
-      HISTORY_TOTAL_MAX_CHARS. We walk newest -> oldest so the OLDEST messages are dropped first.
-    - Assistant messages are stored as JSON; only the human-readable text is kept (no sources).
-    - The result always starts with a user message (some providers reject a leading AI message,
-      which can happen if a previous run failed and left an unanswered user message).
-    """
+    """Build a bounded history for the contextualize chain."""
     if not messages:
         return []
 
@@ -169,9 +158,6 @@ async def _run_pipeline(
     if not existing:
         await asyncio.to_thread(init_chat, user_id, target_chat_id, "New Chat")
 
-
-    # Only the newest N messages are needed (DB-side ORDER BY created_at DESC LIMIT N).
-    # An empty result still means "first interaction".
     existing_messages = await asyncio.to_thread(
         list_recent_messages, target_chat_id, limit=CHAT_HISTORY_TURNS * 2
     )

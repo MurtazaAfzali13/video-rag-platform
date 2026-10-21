@@ -123,9 +123,7 @@ async def _ingest_new_video(video_id: str, user_id: str, settings) -> Dict[str, 
 
 
 async def _get_or_build_video(video_id: str, user_id: str, settings) -> tuple[str, Dict[str, Any]]:
-    """Dedup + cache + single-flight.
-
-    Returns (outcome, video) where outcome is:
+    """
       'hit'  -> video was already indexed: nothing was embedded or generated
       'miss' -> this request indexed the video
       'wait' -> another request was indexing it; we waited and reused its result
