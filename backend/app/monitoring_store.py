@@ -129,7 +129,7 @@ def get_response_time_metrics(
                 grouped: dict[datetime, list[float]] = {}
                 for ts, secs in rows:
                     if ts >= current_start:
-                        hour_key = _floor_to_hour(ts) # اصلاح نام متغیر
+                        hour_key = _floor_to_hour(ts)
                         grouped.setdefault(hour_key, []).append(secs)
                 chart_data = [
                     {"label": b.strftime("%H:%M"), "value": round(sum(v) / len(v), 2) if (v := grouped.get(b)) else 0.0}
@@ -142,7 +142,7 @@ def get_response_time_metrics(
                 grouped_d: dict[date, list[float]] = {}
                 for ts, secs in rows:
                     if ts >= current_start:
-                        day_key = ts.date() # اصلاح نام متغیر
+                        day_key = ts.date()
                         grouped_d.setdefault(day_key, []).append(secs)
                 chart_data = [
                     {"label": _format_chart_label(b), "value": round(sum(v) / len(v), 2) if (v := grouped_d.get(b)) else 0.0}
@@ -154,7 +154,7 @@ def get_response_time_metrics(
                 buckets_m = _build_month_buckets(start_date, now.date())
                 grouped_m: dict[date, list[float]] = {}
                 for ts, secs in rows:
-                    month_key = _month_start(ts.date()) # اصلاح نام متغیر
+                    month_key = _month_start(ts.date())
                     grouped_m.setdefault(month_key, []).append(secs)
                 chart_data = [
                     {"label": b.strftime("%b"), "value": round(sum(v) / len(v), 2) if (v := grouped_m.get(b)) else 0.0}
@@ -219,6 +219,34 @@ def _pct(numerator: int, denominator: int) -> float:
     return round((numerator / denominator) * 100, 1)
 
 
+def _compute_breakdown(traces: list[dict[str, Any]]) -> dict[str, int]:
+    """One trace row = one user question (run)."""
+    failed = video = web = 0
+    for t in traces:
+        if t.get("success") is False:
+            failed += 1
+        elif t.get("workflow") != "video_summary" and (t.get("web_search_time_ms") or 0) > 0:
+            web += 1  # validator rejected the video evidence -> web fallback (by design)
+        else:
+            video += 1  # answered from video (summaries count as video)
+    return {
+        "total_runs": len(traces),
+        "answered_from_video": video,
+        "answered_via_web": web,
+        "failed": failed,
+    }
+
+
+def _score_and_label(b: dict[str, int]) -> tuple[int, str]:
+    total = b["total_runs"]
+    if total <= 0:
+        return 0, "No data yet"
+    grounded = b["answered_from_video"] + b["answered_via_web"]
+    score = (grounded * 100) // total  # integer floor: 100 only when there are zero failures
+    label = "Excellent" if score >= 97 else "Good" if score >= 90 else "Needs attention"
+    return score, label
+
+
 def _compute_health_snapshot(traces: list[dict[str, Any]]) -> dict[str, float]:
     qa_traces = [t for t in traces if t.get("workflow") != "video_summary"]
     qa_total = len(qa_traces)
@@ -257,7 +285,7 @@ def _empty_ai_health_score() -> dict[str, Any]:
 
     return {
         "score": 0,
-        "label": "N/A",
+        "label": "No data yet",
         "metrics": [
             metric("retrieval", "Retrieval Success", higher_is_better=True),
             metric("validation", "Validation Success", higher_is_better=True),
@@ -271,8 +299,9 @@ def _empty_ai_health_score() -> dict[str, Any]:
                 "available": False,
             },
             metric("error", "Error Rate", higher_is_better=False),
-            metric("retry", "Retry Rate", higher_is_better=False),
+            metric("retry", "Web Fallback Rate", higher_is_better=False),
         ],
+        "breakdown": {"total_runs": 0, "answered_from_video": 0, "answered_via_web": 0, "failed": 0},
     }
 
 
@@ -281,7 +310,7 @@ def get_ai_health_score(
     is_admin: bool = False,
     timeframe: str = "week",
 ) -> dict[str, Any]:
-   
+    
     if timeframe not in _VALID_TIMEFRAMES:
         timeframe = "week"
 
@@ -387,9 +416,12 @@ def get_ai_health_score(
                     "available": True,
                 }
 
+            retry_metric = build_metric("retry", "Web Fallback Rate", "retry_rate", higher_is_better=False)
+            retry_metric["tone"] = "neutral"  # designed behavior, not a fault
+
             metrics = [
                 build_metric("retrieval", "Retrieval Success", "retrieval_success", higher_is_better=True),
-                build_metric("validation", "Validation Success", "validation_success", higher_is_better=True),
+                build_metric("validation", "Evidence Found in Video", "validation_success", higher_is_better=True),
                 {
                     "id": "hallucination",
                     "label": "Hallucination Rate",
@@ -400,21 +432,18 @@ def get_ai_health_score(
                     "available": False,
                 },
                 build_metric("error", "Error Rate", "error_rate", higher_is_better=False),
-                build_metric("retry", "Retry Rate", "retry_rate", higher_is_better=False),
+                retry_metric,
             ]
 
-            retrieval = current_snap["retrieval_success"]
-            validation = current_snap["validation_success"]
-            retry = current_snap["retry_rate"]
-            score = min(100, round(retrieval * 0.4 + validation * 0.4 + (100 - retry) * 0.2))
-            label = "Excellent" if score >= 90 else "Good" if score >= 75 else "Fair"
+            breakdown = _compute_breakdown(score_source_traces)
+            score, label = _score_and_label(breakdown)
 
             logger.info(
-                "AI health score (%s) for user %s: score=%d retrieval=%.1f%% validation=%.1f%% retry=%.1f%% error=%.1f%%",
-                timeframe, user_id, score, retrieval, validation, retry, current_snap["error_rate"],
+                "AI health score (%s) for user %s: score=%d breakdown=%s error=%.1f%%",
+                timeframe, user_id, score, breakdown, current_snap["error_rate"],
             )
 
-            return {"score": score, "label": label, "metrics": metrics}
+            return {"score": score, "label": label, "metrics": metrics, "breakdown": breakdown}
 
     except ChatStoreError:
         raise

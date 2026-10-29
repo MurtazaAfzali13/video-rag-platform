@@ -181,7 +181,7 @@ async def video_upload_metrics(
         "percentage_change": metrics.percentage_change,
         "trend": metrics.trend,
         "chart_data": [
-            {"label": _short_weekday_label(entry.day), "value": entry.count} for entry in metrics.daily_counts
+            {"label": _short_weekday_label(entry.day), "value": entry.video_count } for entry in metrics.daily_counts
         ],
     }
 

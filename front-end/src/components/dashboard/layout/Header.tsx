@@ -56,7 +56,7 @@ export function Header({
 
           <button className="flex h-10 items-center gap-2 rounded-xl border border-white/[0.06] bg-white/[0.03] px-3 text-sm text-white/70 transition-colors hover:bg-white/[0.06]">
             <Calendar className="h-4 w-4 text-white/40" />
-            Dec 21 – Dec 27
+            Oct 1 – Oct 27
           </button>
 
           <button

@@ -25,10 +25,19 @@ export interface HealthMetric {
   available: boolean;
 }
 
+// 🆕 اضافه شدن تایپ Breakdown
+export interface HealthBreakdown {
+  total_runs: number;
+  answered_from_video: number;
+  answered_via_web: number;
+  failed: number;
+}
+
 export interface AIHealthScoreData {
   score: number;
   label: string;
   metrics: HealthMetric[];
+  breakdown?: HealthBreakdown | null; // 🆕 اضافه شدن به دیتا
 }
 
 export interface ResponseTimeChartPoint {
@@ -43,11 +52,6 @@ export interface ResponseTimeMetricsData {
   chart_data: ResponseTimeChartPoint[];
 }
 
-// 🆕 داده‌ی کارت "System Status" — شکلش دقیقاً همان چیزی‌ست که
-// GET /api/monitoring/system-status (SystemStatusResponse) برمی‌گرداند.
-// عمداً هیچ آیکونی اینجا نیست — آیکون سمت فرانت، بر اساس `id`، از یک
-// map محلی در SystemStatus.tsx می‌آید (کامپوننت React را نمی‌شود از
-// بک‌اند serialize کرد).
 export type ServiceStatus = "healthy" | "warning" | "offline";
 
 export interface ServiceStatusItem {
@@ -213,8 +217,6 @@ export function MonitoringProvider({ children }: { children: ReactNode }) {
     [baseUrl, getToken]
   );
 
-  // 🆕 بدون timeframe — این داده global است (وضعیت زیرساخت)، نه per-user،
-  // پس نیازی به ref/timeframe pattern بالا ندارد.
   const fetchSystemStatus = useCallback(async () => {
     dispatch({ type: "FETCH_SYSTEM_STATUS_START" });
     try {

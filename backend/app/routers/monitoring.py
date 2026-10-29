@@ -35,7 +35,6 @@ async def response_time_endpoint(
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
     try:
-        
         metrics_data = await asyncio.to_thread(
             get_response_time_metrics, auth.user_id, auth.is_admin, timeframe
         )
@@ -59,10 +58,18 @@ class HealthMetricSchema(BaseModel):
     available: bool = True
 
 
+class HealthBreakdownSchema(BaseModel):
+    total_runs: int
+    answered_from_video: int
+    answered_via_web: int
+    failed: int
+
+
 class AIHealthScoreSchema(BaseModel):
     score: int
     label: str
     metrics: List[HealthMetricSchema]
+    breakdown: Optional[HealthBreakdownSchema] = None
 
 
 @router.get("/health-score", response_model=AIHealthScoreSchema)
@@ -70,7 +77,6 @@ async def health_score_endpoint(
     timeframe: Timeframe = Query("week", description="بازه‌ی زمانی: today | week | month | all"),
     auth: AuthenticatedUser = Depends(get_current_user_with_role),
 ):
-   
     try:
         score_data = await asyncio.to_thread(
             get_ai_health_score, auth.user_id, auth.is_admin, timeframe

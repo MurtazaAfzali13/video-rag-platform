@@ -47,6 +47,14 @@ from app.routers.video_route import invalidate_user_video_cache
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["Video"])
 
+# Maximum video length (in seconds) for non-admin users.
+MAX_FREE_VIDEO_SECONDS = 120
+
+DURATION_LIMIT_DETAIL = (
+    "کاربران عادی تنها مجاز به پردازش ویدیوهای نهایتاً ۲ دقیقه‌ای هستند. "
+    "برای ویدیوهای طولانی‌تر، حساب خود را ارتقا دهید."
+)
+
 
 class VideoRequest(BaseModel):
     video_url: str = Field(..., min_length=1, description="Full YouTube watch or share URL")
@@ -65,10 +73,37 @@ class ProcessVideoResponse(BaseModel):
     cached: bool = False  # True = video was already indexed (cache hit / waited for another request)
 
 
-async def _ingest_new_video(video_id: str, user_id: str, settings) -> Dict[str, Any]:
-    """The expensive path (cache MISS): title -> transcript -> embeddings -> chapters."""
-    video_title = await fetch_video_title(video_id)
+def _transcript_duration_seconds(transcript: List[Dict[str, Any]]) -> float:
+    """Video length estimated from the transcript: the latest (start + duration) of any segment."""
+    end = 0.0
+    for seg in transcript or []:
+        try:
+            seg_end = float(seg.get("start", 0.0)) + float(seg.get("duration", 0.0))
+        except (TypeError, ValueError):
+            continue
+        end = max(end, seg_end)
+    return end
 
+
+def _stored_duration_seconds(transcript_lines: List[Dict[str, Any]]) -> Optional[float]:
+    """
+    Approximate length of an already-indexed video, from the start time of its last
+    stored transcript line (format "MM:SS" or "HH:MM:SS"). Returns None if unparsable.
+    """
+    if not transcript_lines:
+        return None
+    raw = str(transcript_lines[-1].get("time", "")).strip()
+    try:
+        seconds = 0.0
+        for part in raw.split(":"):
+            seconds = seconds * 60 + float(part)
+        return seconds
+    except ValueError:
+        return None
+
+
+async def _ingest_new_video(video_id: str, user_id: str, settings, is_admin: bool) -> Dict[str, Any]:
+    """The expensive path (cache MISS): transcript -> length guard -> title -> embeddings -> chapters."""
     proxies = None
     if getattr(settings, "proxy_url", None):
         proxies = {"http": settings.proxy_url, "https": settings.proxy_url}
@@ -77,6 +112,19 @@ async def _ingest_new_video(video_id: str, user_id: str, settings) -> Dict[str, 
         transcript = await asyncio.to_thread(fetch_transcript, video_id, proxies=proxies)
     else:
         transcript = await asyncio.to_thread(fetch_transcript, video_id)
+
+    if not transcript:
+        raise HTTPException(status_code=422, detail="زیرنویس این ویدیو قابل پردازش نیست.")
+
+    # Length guard for non-admin users: no extra YouTube call, derived from the transcript itself.
+    # Raised before any embedding cost; the caller's except-block marks the video as failed,
+    # so the single-flight lock is released and an admin can still index it later.
+    if not is_admin:
+        total_duration_seconds = _transcript_duration_seconds(transcript)
+        if total_duration_seconds > MAX_FREE_VIDEO_SECONDS:
+            raise HTTPException(status_code=403, detail=DURATION_LIMIT_DETAIL)
+
+    video_title = await fetch_video_title(video_id)
 
     chunks_processed = await asyncio.to_thread(
         process_and_ingest_video,
@@ -122,7 +170,9 @@ async def _ingest_new_video(video_id: str, user_id: str, settings) -> Dict[str, 
     }
 
 
-async def _get_or_build_video(video_id: str, user_id: str, settings) -> tuple[str, Dict[str, Any]]:
+async def _get_or_build_video(
+    video_id: str, user_id: str, settings, is_admin: bool
+) -> tuple[str, Dict[str, Any]]:
     """
       'hit'  -> video was already indexed: nothing was embedded or generated
       'miss' -> this request indexed the video
@@ -140,7 +190,7 @@ async def _get_or_build_video(video_id: str, user_id: str, settings) -> tuple[st
     if verdict == "claimed":
         logger.info("cache MISS video=%s user=%s -> indexing", video_id, user_id)
         try:
-            built = await _ingest_new_video(video_id, user_id, settings)
+            built = await _ingest_new_video(video_id, user_id, settings, is_admin)
             await asyncio.to_thread(mark_video_ready, video_id, **built)
         except BaseException:  # includes client-disconnect cancellation
             await asyncio.shield(asyncio.to_thread(mark_video_failed, video_id))
@@ -186,7 +236,15 @@ async def process_video(
                             "برای پردازش ویدیوهای بیشتر، لطفاً حساب خود را ارتقا دهید."),
                     )
 
-        outcome, video = await _get_or_build_video(video_id, user_id, settings)
+        outcome, video = await _get_or_build_video(video_id, user_id, settings, auth.is_admin)
+
+        # Length guard for cached videos (e.g. a long video indexed earlier by an admin):
+        # without this, a normal user could bypass the limit via a cache hit / wait.
+        # Done BEFORE linking, so no access is granted.
+        if not auth.is_admin and outcome != "miss":
+            stored_seconds = _stored_duration_seconds(video.get("transcript_lines") or [])
+            if stored_seconds is not None and stored_seconds > MAX_FREE_VIDEO_SECONDS:
+                raise HTTPException(status_code=403, detail=DURATION_LIMIT_DETAIL)
 
         # Link this user to the (shared) indexed video: this is what grants access.
         await asyncio.to_thread(link_user_video, user_id, video_id)

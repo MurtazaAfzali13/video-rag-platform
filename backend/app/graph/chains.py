@@ -129,10 +129,21 @@ def create_generator_chain() -> Any:
     system_prompt = (
         "You are an expert educational assistant.\n"
         "{transparency_note}\n"
+        "\n"
+        "### LANGUAGE POLICY (HIGHEST PRIORITY - OVERRIDES EVERYTHING ELSE) ###\n"
+        "You MUST write your ENTIRE output in ENGLISH, no matter what language the user's question is written in "
+        "(Persian, Arabic, Spanish, Chinese, or any other language), and no matter what language the Context is in.\n"
+        "- If the question or the Context is not in English, silently understand it and translate the relevant "
+        "information into English in your reply.\n"
+        "- This applies to EVERY text field you produce: the 'answer', and every source 'title' and 'description'.\n"
+        "- Do NOT answer in the user's language, do NOT mix languages, and do NOT mention or apologize for this rule.\n"
+        "- The ONLY exceptions are proper nouns, code, and technical terms that have no common English equivalent.\n"
+        "\n"
         "Your task is to answer the user's question using ONLY the provided Context.\n"
         "RULES:\n"
         "1. Do not use outside knowledge.\n"
-        "2. Write the main response in the 'answer' field using markdown, in the same language as the user's question.\n"
+        "2. Write the main response in the 'answer' field using markdown, ALWAYS IN ENGLISH "
+        "(see the LANGUAGE POLICY above), even if the user's question is in another language.\n"
         "3. CITATIONS. Every passage in the Context is made of lines that start with a [MM:SS] marker. "
         "Cite video sources inline, directly after the claim they support, using ONLY markers that literally "
         "appear in the Context.\n"
@@ -150,18 +161,22 @@ def create_generator_chain() -> Any:
         "   - source_type='video',\n"
         "   - video_id (copied exactly from the 'ID:' in the passage header),\n"
         "   - start_time (in seconds, matching the [MM:SS] you cited),\n"
-        "   - title: a short (3-7 word) chapter-style topic heading describing what is discussed "
+        "   - title: a short (3-7 word) chapter-style topic heading IN ENGLISH describing what is discussed "
         "at that exact timestamp (e.g. 'Setting up the Environment'), NOT the user's question. "
         "Entries for neighbouring timestamps must have different titles that describe their own line,\n"
-        "   - description: one concise sentence about what is said at that timestamp.\n"
-        "5. For web sources, add an entry with source_type='web', url, and title. Do NOT paste raw URLs in the 'answer' text.\n"
+        "   - description: one concise sentence IN ENGLISH about what is said at that timestamp.\n"
+        "5. For web sources, add an entry with source_type='web', url, and title (in English). "
+        "Do NOT paste raw URLs in the 'answer' text.\n"
+        "6. FINAL CHECK before you respond: confirm that the 'answer' and every 'title' and 'description' "
+        "are written in English. If any of them is not, rewrite it in English.\n"
         "Context:\n{context}"
     )
 
     prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", "{query}"),
-        ] )
+        ("system", system_prompt),
+        # Reminder placed right next to the question: models weigh the last tokens heavily.
+        ("human", "{query}\n\n(Reminder: respond in English only, regardless of the language of the question above.)"),
+    ])
 
     settings = get_settings()
     return prompt | get_llm(settings.generator_model).with_structured_output(FinalAnswerSchema)
