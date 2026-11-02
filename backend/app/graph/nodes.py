@@ -171,8 +171,6 @@ def retriever_node(state: AgentState) -> dict[str, Any]:
     search_scope = state.get("search_scope", "single_video")
     vector_store = _get_vector_store()
 
-    # ACCESS CONTROL: the Pinecone namespace is shared, so isolation is enforced here.
-    # Fail-closed: if the lookup raises, the request fails instead of leaking data.
     allowed = list_user_video_ids(user_id)
 
     def _empty() -> dict[str, Any]:
@@ -306,7 +304,6 @@ def reranker_node(state: AgentState, *, top_n: int = MAX_RERANK_TOP_N) -> dict[s
 
 def parent_expander_node(state: AgentState) -> dict[str, Any]:
     """The 'Big' half of Small-to-Big: swap matched child chunks for their parent passages.
-
     - Children are ranked best-first; parents inherit the rank of their best child.
     - `start_time` of the resulting doc stays the BEST-HIT child's time (precise citation),
       while the parent text carries inline [MM:SS] markers for every line.
@@ -362,6 +359,7 @@ def parent_expander_node(state: AgentState) -> dict[str, Any]:
                 wanted.add(next_id)
 
     rows: dict[str, dict[str, Any]] = {}
+    # N+1 Query: fetch all the parent rows in one go, instead of one query per parent.
     if wanted:
         try:
             rows = fetch_parents(sorted(wanted))

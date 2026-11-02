@@ -43,7 +43,15 @@ interface Props {
 }
 type QuestionType = "general" | "about_video";
 
-
+/* ------------------------------------------------------------------ */
+/*  Design tokens (colors taken from the reference screenshot)         */
+/* ------------------------------------------------------------------ */
+// Page background  : #050A1E -> #040616
+// Assistant bubble : #0B1433 (border #1B2757)
+// User bubble      : #3A2D9F -> #4C3BC2 (border violet)
+// Accent / avatar  : #6366F1 -> #7C5CF6
+// Timestamp chip   : #12204A (border #26397A)
+// Primary text     : #EEF1FA   Muted text: #7F89AD
 
 function formatTimestamp(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -84,8 +92,6 @@ function formatMessageTime(iso: string): string {
   }
 }
 
-
-
 /**
  * Turns "[MM:SS]" / "[H:MM:SS]" citations written by the model into markdown links
  * ("[MM:SS](#t=<seconds>)") so they become clickable. Code spans/fences are left untouched,
@@ -109,6 +115,43 @@ function linkifyTimestamps(text: string): string {
     .join("");
 }
 
+/* Shared class strings ------------------------------------------------ */
+
+// Timestamp / source chip: filled #5B4FE9, rounded-lg, white text + external-link icon
+const CHIP_CLASS =
+  "group inline-flex items-center gap-2 rounded-lg border border-[#8B85FF]/40 bg-gradient-to-br from-[#5B4FE9] to-[#4B3FD8] px-3 py-1.5 text-[13px] font-medium text-white shadow-[0_0_16px_rgba(91,79,233,0.45)] transition-all duration-200 hover:border-[#B9B4FF]/70 hover:brightness-110 hover:shadow-[0_0_24px_rgba(91,79,233,0.70)] active:scale-95";
+
+// Inline text links inside markdown: #5B4FE9 underline + soft tinted hover
+const LINK_INLINE_CLASS =
+  "break-words rounded-sm font-medium text-[#B9B4FF] underline decoration-[#5B4FE9] decoration-2 underline-offset-4 transition-all duration-200 hover:bg-[#5B4FE9]/25 hover:text-white hover:decoration-[#8B85FF]";
+
+// Markdown body inside the assistant bubble
+const PROSE_CLASS =
+  "prose prose-invert max-w-none text-[14px] leading-[1.65] text-[#EEF1FA] " +
+  "[&_p]:my-0 [&_p]:mb-3 [&_p:last-child]:mb-0 " +
+  "[&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:pl-5 " +
+  "[&_li]:my-1 [&_li]:pl-0.5 [&_li::marker]:text-[#EEF1FA] " +
+  "[&_strong]:font-semibold [&_strong]:text-white " +
+  "[&_code]:rounded [&_code]:bg-[#16224B] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-indigo-200 [&_code]:before:content-none [&_code]:after:content-none " +
+  "[&_pre]:rounded-xl [&_pre]:border [&_pre]:border-[#1B2757] [&_pre]:bg-[#070D26]";
+
+function SparkStar({ className }: { className?: string }) {
+  // Four-point star used in the avatar (matches the reference)
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden="true">
+      <path d="M12 1.5c.6 4.9 2.6 8.3 5.4 9.6 1.5.7 3.3 1.1 5.1 1.4-1.8.3-3.6.7-5.1 1.4-2.8 1.3-4.8 4.7-5.4 9.6-.6-4.9-2.6-8.3-5.4-9.6-1.5-.7-3.3-1.1-5.1-1.4 1.8-.3 3.6-.7 5.1-1.4C9.4 9.8 11.4 6.4 12 1.5Z" />
+    </svg>
+  );
+}
+
+function AssistantAvatar() {
+  return (
+    <div className="mr-3 mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#6366F1] to-[#7C5CF6] shadow-[0_0_18px_rgba(99,102,241,0.55)] ring-1 ring-white/10">
+      <SparkStar className="size-4 text-white" />
+    </div>
+  );
+}
+
 function buildAnswerComponents(onJumpToTime: (seconds: number) => void) {
   return {
     a: ({ node, href, children, ...props }: any) => {
@@ -118,7 +161,7 @@ function buildAnswerComponents(onJumpToTime: (seconds: number) => void) {
           <button
             type="button"
             onClick={() => onJumpToTime(Number.isFinite(seconds) ? seconds : 0)}
-            className="mx-0.5 inline-flex items-center rounded-md border border-blue-400/40 bg-blue-500/15 px-1.5 py-0.5 align-baseline font-mono text-[11px] font-medium text-blue-300 transition-colors hover:border-blue-300/70 hover:bg-blue-500/30 hover:text-blue-100"
+            className="mx-0.5 inline-flex items-center rounded-md border border-[#8B85FF]/40 bg-[#5B4FE9] px-1.5 py-0.5 align-baseline text-[12px] font-medium text-white shadow-[0_0_10px_rgba(91,79,233,0.45)] transition-all duration-200 hover:border-[#B9B4FF]/70 hover:brightness-110"
             aria-label={`Jump to ${String(children)}`}
           >
             {children}
@@ -131,7 +174,7 @@ function buildAnswerComponents(onJumpToTime: (seconds: number) => void) {
           {...props}
           target="_blank"
           rel="noopener noreferrer"
-          className="break-words text-blue-300 hover:underline hover:underline-offset-2"
+          className={LINK_INLINE_CLASS}
         >
           {children}
         </a>
@@ -151,11 +194,11 @@ const TimestampPill = memo(function TimestampPill({
     <button
       type="button"
       onClick={() => onClick(parseTimestampToSeconds(time))}
-      className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-300 shadow-sm shadow-blue-400/10 transition-all duration-200 hover:scale-105 hover:border-blue-300/70 hover:from-blue-500/40 hover:to-blue-600/40 hover:text-blue-100 active:scale-95 group"
+      className={CHIP_CLASS}
       aria-label={`Jump to ${time}`}
     >
-      <span className="shrink-0 font-mono">[{time}]</span>
-      <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+      <span className="shrink-0">{time}</span>
+      <ExternalLink className="size-3.5 text-white/90 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
     </button>
   );
 });
@@ -173,7 +216,7 @@ const CopyButton = memo(function CopyButton({ text }: { text: string }) {
     <button
       type="button"
       onClick={handleCopy}
-      className="rounded-md p-1.5 text-slate-400 transition-all duration-200 hover:bg-slate-700/50 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+      className="rounded-md p-1.5 text-[#7F89AD] transition-all duration-200 hover:bg-white/[0.06] hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50"
       title="Copy response"
     >
       {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
@@ -211,44 +254,41 @@ const AssistantContent = memo(function AssistantContent({
     }, {});
 
     return (
-      <div className="flex w-full flex-col gap-4 text-sm">
-        <div className="flex items-center gap-2 border-b border-blue-400/20 pb-2 text-xs text-blue-300">
+      <div className="flex w-full flex-col gap-4 text-[14px]">
+        <div className="flex items-center gap-2 border-b border-[#1B2757] pb-2 text-xs text-indigo-300">
           <Sparkles className="size-4" />
           <span className="font-medium">AI Video Summary</span>
         </div>
         
         {parsedContent.overall_summary && (
-          <p className="leading-relaxed text-slate-300">{parsedContent.overall_summary}</p>
+          <p className="leading-[1.65] text-[#EEF1FA]">{parsedContent.overall_summary}</p>
         )}
 
-    {Object.keys(groupedTakeaways).length > 0 && (
-          <div className="mt-2 space-y-4">
+        {Object.keys(groupedTakeaways).length > 0 && (
+          <div className="mt-1 space-y-3">
             {Object.entries(groupedTakeaways).map(([time, points]: [string, any], i: number) => (
-              <div key={i} className="flex flex-col gap-2 rounded-lg bg-white/5 p-3 border border-white/5">
-                
-        
-                <ul className="space-y-1.5 text-slate-300 text-sm leading-relaxed">
+              <div key={i} className="flex flex-col gap-2 rounded-xl border border-[#1B2757] bg-[#0E1A42]/70 p-3">
+                <ul className="space-y-1.5 text-[14px] leading-[1.65] text-[#EEF1FA]">
                   {points.map((point: string, idx: number) => (
                     <li key={idx} className="flex gap-2">
-                      <span className="text-blue-400 mt-1">•</span>
+                      <span className="mt-0.5 text-[#EEF1FA]">•</span>
                       <span>{point}</span>
                     </li>
                   ))}
                 </ul>
 
                 {time !== "general" && (
-                  <div className="flex justify-end mt-2">
+                  <div className="mt-2 flex justify-end">
                     <TimestampPill time={time} onClick={onJumpToTime} />
                   </div>
                 )}
-                
               </div>
             ))}
           </div>
         )}
         
         {parsedContent.academic_conclusion && (
-          <div className="text-xs italic border-t border-white/10 pt-2 mt-2 text-slate-400">
+          <div className="mt-2 border-t border-[#1B2757] pt-2 text-xs italic text-[#7F89AD]">
             {parsedContent.academic_conclusion}
           </div>
         )}
@@ -258,8 +298,8 @@ const AssistantContent = memo(function AssistantContent({
 
   if (parsedContent && parsedContent.type === 'qa_response') {
     return (
-      <div className="flex w-full flex-col gap-3 text-sm">
-        <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
+      <div className="flex w-full flex-col gap-3 text-[14px]">
+        <div className={PROSE_CLASS}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={buildAnswerComponents(onJumpToTime)}
@@ -269,13 +309,11 @@ const AssistantContent = memo(function AssistantContent({
         </div>
 
         {parsedContent.sources && parsedContent.sources.length > 0 && (
-          <div className="mt-2 pt-3 border-t border-slate-700/50">
-           
-            <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-              <ArrowUpRight className="size-3" />
-              Related timestamps
+          <div className="mt-1">
+            <p className="mb-2.5 text-[13px] text-[#EEF1FA]">
+              Related timestamps:
             </p>
-            <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2.5">
               {parsedContent.sources.map((source: any, idx: number) => {
                 const key = `${source.source_type}-${source.start_time ?? source.url ?? idx}-${idx}`;
 
@@ -285,14 +323,14 @@ const AssistantContent = memo(function AssistantContent({
                       key={key}
                       type="button"
                       onClick={() => onJumpToTime(source.start_time || 0)}
-                      className="inline-flex items-center gap-1.5 rounded-full border border-blue-400/40 bg-gradient-to-r from-blue-500/20 to-blue-600/20 px-3 py-1.5 text-xs font-medium text-blue-300 shadow-sm shadow-blue-400/10 transition-all duration-200 hover:scale-105 hover:border-blue-300/70 hover:from-blue-500/40 hover:to-blue-600/40 hover:text-blue-100 active:scale-95 group"
+                      className={CHIP_CLASS}
                       title={source.title || undefined}
                     >
-                      <span className="shrink-0 font-mono">{formatTimestamp(source.start_time || 0)}</span>
+                      <span className="shrink-0">{formatTimestamp(source.start_time || 0)}</span>
                       {source.title && (
-                        <span className="max-w-[160px] truncate text-blue-200/80">{source.title}</span>
+                        <span className="max-w-[160px] truncate text-white/80">{source.title}</span>
                       )}
-                      <ArrowUpRight className="size-3 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                      <ExternalLink className="size-3.5 text-white/90 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                     </button>
                   );
                 }
@@ -303,12 +341,12 @@ const AssistantContent = memo(function AssistantContent({
                     href={source.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-600/40 bg-slate-800/40 px-3 py-1.5 text-xs font-medium text-slate-300 shadow-sm transition-all duration-200 hover:scale-105 hover:border-blue-400/50 hover:bg-slate-800/70 hover:text-blue-300 active:scale-95 group"
+                    className={CHIP_CLASS}
                     title={source.title || safeHostname(source.url)}
                   >
-                    <Globe className="size-3 shrink-0" />
+                    <Globe className="size-3.5 shrink-0 text-white/80" />
                     <span className="max-w-[110px] truncate">{safeHostname(source.url)}</span>
-                    <ExternalLink className="size-3 shrink-0 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
+                    <ExternalLink className="size-3.5 shrink-0 text-white/90 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
                   </a>
                 );
               })}
@@ -323,9 +361,9 @@ const AssistantContent = memo(function AssistantContent({
   const cleanContent = removeTimestampsFromText(content);
 
   return (
-    <div className="flex w-full flex-col gap-3 text-sm">
+    <div className="flex w-full flex-col gap-3 text-[14px]">
       {cleanContent && (
-        <div className="prose prose-invert max-w-none leading-relaxed text-slate-300 [&_code]:rounded [&_code]:bg-slate-800/80 [&_code]:px-1.5 [&_code]:py-0.5 [&_pre]:border [&_pre]:border-slate-700/50 [&_pre]:bg-slate-900/80">
+        <div className={PROSE_CLASS}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm]}
             components={{
@@ -334,7 +372,7 @@ const AssistantContent = memo(function AssistantContent({
                   {...props}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="text-blue-300 transition-colors hover:text-blue-300 hover:underline hover:underline-offset-2 break-words"
+                  className={LINK_INLINE_CLASS}
                 />
               ),
               p: ({ node, ...props }) => (
@@ -347,7 +385,7 @@ const AssistantContent = memo(function AssistantContent({
 
           {isStreaming && (
             <span
-              className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-blue-300 align-middle"
+              className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-indigo-300 align-middle"
               aria-hidden="true"
             />
           )}
@@ -355,12 +393,11 @@ const AssistantContent = memo(function AssistantContent({
       )}
 
       {timestamps.length > 0 && !isStreaming && (
-        <div className="mt-2 pt-3 border-t border-slate-700/50">
-          <p className="text-[10px] text-slate-500 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-            <ArrowUpRight className="size-3" />
-            Extracted Timestamps
+        <div className="mt-1">
+          <p className="mb-2.5 text-[13px] text-[#EEF1FA]">
+            Related timestamps:
           </p>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             {timestamps.map((timestamp, index) => (
               <TimestampPill
                 key={`${timestamp}-${index}`}
@@ -436,15 +473,16 @@ export default function ChatInterface({
 
   return (
     <section
-      className="relative flex min-w-0 flex-1 flex-col h-full"
+      className="relative flex h-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-[#1B2757]/80 shadow-[0_0_40px_rgba(79,70,229,0.08),inset_0_1px_0_rgba(255,255,255,0.04)]"
       style={{
-        background: "radial-gradient(circle at top, rgba(59,130,246,0.12), transparent 40%), linear-gradient(180deg, #08101F 0%, #050816 100%)",
+        background:
+          "radial-gradient(circle at 50% 0%, rgba(79,70,229,0.10), transparent 45%), linear-gradient(180deg, #060C20 0%, #040616 100%)",
       }}
     >
       {/* Header */}
-      <div className="sticky top-0 z-10 flex-shrink-0 border-b border-white/[0.06] bg-[#08101F]/80 px-4 py-3 backdrop-blur-md sm:px-5">
+      <div className="sticky top-0 z-10 flex-shrink-0 border-b border-white/[0.06] bg-[#060C20]/70 px-5 py-4 backdrop-blur-md">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex items-center gap-2 min-w-0">
+          <div className="flex min-w-0 items-center gap-2.5">
             <button
               type="button"
               onClick={toggleSidebar}
@@ -454,10 +492,8 @@ export default function ChatInterface({
               <Menu className="size-5" />
             </button>
 
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-blue-400 to-blue-600 shadow-lg shadow-blue-400/25">
-              <Sparkles className="size-3.5 text-white" />
-            </div>
-            <h2 className="text-sm font-semibold text-white truncate">
+            <Sparkles className="size-[18px] shrink-0 text-[#A78BFA]" />
+            <h2 className="truncate text-[15px] font-medium text-white">
               AI Assistant
             </h2>
           </div>
@@ -465,21 +501,21 @@ export default function ChatInterface({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              className="flex size-8 items-center justify-center rounded-full border border-white/10 bg-white/5 text-slate-400 transition-colors hover:text-white md:hidden"
+              className="flex size-6 items-center justify-center rounded-full border border-slate-200/70 text-slate-100 transition-colors hover:border-white hover:text-white md:hidden"
               aria-label="About this assistant"
             >
-              <Info className="size-4" />
+              <Info className="size-3.5" />
             </button>
 
             {/* Type toggle */}
-            <div className="hidden gap-1 rounded-lg border border-slate-700/30 bg-[#0C1426] p-0.5 md:flex">
+            <div className="hidden gap-1 rounded-lg border border-[#1B2757] bg-[#0A1230] p-0.5 md:flex">
               <button
                 type="button"
                 onClick={() => setQuestionType("general")}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
                   questionType === "general"
-                    ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-400/20"
-                    : "text-slate-400 hover:text-slate-300"
+                    ? "bg-gradient-to-r from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_14px_rgba(99,102,241,0.45)]"
+                    : "text-[#7F89AD] hover:text-slate-200"
                 }`}
               >
                 <Globe className="size-3.5" />
@@ -490,8 +526,8 @@ export default function ChatInterface({
                 onClick={() => setQuestionType("about_video")}
                 className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
                   questionType === "about_video"
-                    ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-400/20"
-                    : "text-slate-400 hover:text-slate-300"
+                    ? "bg-gradient-to-r from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_14px_rgba(99,102,241,0.45)]"
+                    : "text-[#7F89AD] hover:text-slate-200"
                 }`}
               >
                 About Video
@@ -502,22 +538,22 @@ export default function ChatInterface({
       </div>
 
   
-      <div className="flex-1 overflow-y-auto px-4 py-6">
-        <div className="mx-auto max-w-3xl space-y-6">
+      <div className="flex-1 overflow-y-auto px-4 py-6 [scrollbar-color:#1B2757_transparent] [scrollbar-width:thin]">
+        <div className="mx-auto max-w-3xl space-y-5">
           {isLoading && messages.length === 0 ? (
-            <div className="flex items-center justify-center h-[280px]">
+            <div className="flex h-[280px] items-center justify-center">
               <div className="flex flex-col items-center gap-3">
-                <div className="size-6 animate-spin rounded-full border-2 border-blue-400 border-t-transparent" />
-                <p className="text-sm text-slate-400">Loading conversation…</p>
+                <div className="size-6 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                <p className="text-sm text-[#7F89AD]">Loading conversation…</p>
               </div>
             </div>
           ) : messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-[280px] sm:h-[320px] text-center">
-              <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-400/20 to-blue-600/20 border border-blue-400/20">
-                <MessageSquare className="size-8 text-blue-300" />
+            <div className="flex h-[280px] flex-col items-center justify-center text-center sm:h-[320px]">
+              <div className="mb-4 flex size-16 items-center justify-center rounded-2xl border border-indigo-400/20 bg-gradient-to-br from-[#6366F1]/20 to-[#7C5CF6]/20 shadow-[0_0_24px_rgba(99,102,241,0.18)]">
+                <MessageSquare className="size-8 text-indigo-300" />
               </div>
               <h2 className="text-lg font-semibold text-white">Ask anything about this video</h2>
-              <p className="text-sm text-slate-400 mt-2 max-w-md">
+              <p className="mt-2 max-w-md text-sm text-[#7F89AD]">
                 I can help you understand the content better.
               </p>
             </div>
@@ -537,14 +573,14 @@ export default function ChatInterface({
                       animate={{ opacity: 1, y: 0 }}
                       className="flex justify-end"
                     >
-                      <div className="max-w-[88%] rounded-2xl rounded-br-md bg-gradient-to-br from-blue-500 to-blue-700 px-4 py-3 shadow-lg shadow-blue-400/25 sm:max-w-[85%]">
-                        <p className="text-sm leading-relaxed whitespace-pre-wrap text-white">
+                      <div className="max-w-[88%] rounded-2xl border border-violet-300/15 bg-gradient-to-br from-[#3A2D9F] to-[#4C3BC2] px-4 py-3 shadow-[0_6px_24px_rgba(76,59,194,0.28)] sm:max-w-[85%]">
+                        <p className="whitespace-pre-wrap text-[14px] leading-[1.6] text-[#F4F5FF]">
                           {msg.content}
                         </p>
                         {timeLabel && (
-                          <div className="mt-1.5 flex items-center justify-end gap-1 text-[10px] text-blue-200/70">
+                          <div className="mt-1.5 flex items-center justify-end gap-1.5 text-[11px] text-indigo-200/70">
                             <span>{timeLabel}</span>
-                            <CheckCheck className="size-3 text-blue-300/80" />
+                            <CheckCheck className="size-3.5 text-indigo-200/80" />
                           </div>
                         )}
                       </div>
@@ -557,41 +593,39 @@ export default function ChatInterface({
                     key={msg.id || index}
                     initial={{ opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
-                    className="flex justify-start w-full"
+                    className="flex w-full justify-start"
                   >
-                    <div className="mr-3 mt-1 flex size-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-blue-400 to-blue-600 shadow-lg shadow-blue-400/20">
-                      <Sparkles className="size-3.5 text-white" />
-                    </div>
-                    <div className="group relative max-w-[88%] min-w-0 rounded-2xl rounded-tl-md border border-white/[0.08] bg-[#101A2E]/90 shadow-xl backdrop-blur-md sm:max-w-[85%]">
-                      <div className="px-4 py-3.5 sm:px-5">
+                    <AssistantAvatar />
+                    <div className="group relative max-w-[88%] min-w-0 rounded-2xl border border-[#1B2757]/90 bg-[#0B1433]/90 shadow-[0_0_28px_rgba(79,70,229,0.07),inset_0_1px_0_rgba(255,255,255,0.03)] backdrop-blur-md sm:max-w-[85%]">
+                      <div className="px-4 py-3.5">
                         <AssistantContent
                           content={msg.content}
                           isStreaming={isStreaming}
                           onJumpToTime={jumpToTime}
                         />
                         {timeLabel && !isStreaming && (
-                          <p className="mt-2 text-[10px] text-slate-500">{timeLabel}</p>
+                          <p className="mt-2 text-right text-[11px] text-[#7F89AD]">{timeLabel}</p>
                         )}
                       </div>
 
                       {/* Action buttons */}
                       {!isStreaming && msg.content && (
-                        <div className="flex items-center justify-end gap-1 border-t border-slate-700/30 px-4 py-2 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
+                        <div className="flex items-center justify-end gap-1 border-t border-[#1B2757]/70 px-4 py-2 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                           <CopyButton text={msg.content} />
                           {isLast && onRegenerate && (
                             <button
                               type="button"
                               onClick={onRegenerate}
-                              className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-slate-400 transition-all duration-200 hover:bg-slate-700/50 hover:text-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+                              className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs text-[#7F89AD] transition-all duration-200 hover:bg-white/[0.06] hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50"
                             >
                               <RotateCcw className="size-3.5" />
                               <span className="hidden sm:inline">Regenerate</span>
                             </button>
                           )}
-                          <button type="button" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-blue-300">
+                          <button type="button" className="rounded-md p-1.5 text-[#7F89AD] hover:bg-white/[0.06] hover:text-indigo-200">
                             <ThumbsUp className="size-3.5" />
                           </button>
-                          <button type="button" className="rounded-md p-1.5 text-slate-400 hover:bg-slate-700/50 hover:text-blue-300">
+                          <button type="button" className="rounded-md p-1.5 text-[#7F89AD] hover:bg-white/[0.06] hover:text-indigo-200">
                             <ThumbsDown className="size-3.5" />
                           </button>
                         </div>
@@ -619,62 +653,64 @@ export default function ChatInterface({
       </div>
 
       {/* Input Area */}
-      <div className="sticky bottom-0 z-10 flex-shrink-0 bg-gradient-to-t from-[#050816] via-[#050816]/98 to-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+      <div className="sticky bottom-0 z-10 flex-shrink-0 bg-gradient-to-t from-[#040616] via-[#040616]/95 to-transparent px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
         <form onSubmit={handleSend} className="mx-auto max-w-3xl">
-          <div className="relative rounded-2xl border border-slate-700/50 bg-[#0C1426]/95 shadow-lg backdrop-blur-sm transition-all duration-200 focus-within:border-blue-400/50 focus-within:shadow-blue-400/10">
-            <textarea
-              id="chat-input"
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask anything about this video..."
-              rows={1}
-              disabled={isTyping}
-              className="w-full resize-none bg-transparent px-4 py-3.5 pr-14 text-sm text-white placeholder:text-slate-500 focus:outline-none disabled:opacity-60"
-            />
-            <button
-              type="submit"
-              disabled={!input.trim() || isTyping}
-              className="absolute right-2 bottom-2 flex size-9 items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-lg shadow-blue-400/25 transition-all duration-200 hover:from-blue-400 hover:to-blue-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              <Send className="size-4" />
-            </button>
-          </div>
+          <div className="rounded-2xl border border-[#1B2757] bg-[#080F2B]/95 shadow-[0_0_24px_rgba(79,70,229,0.07)] backdrop-blur-sm transition-all duration-200 focus-within:border-indigo-400/50 focus-within:shadow-[0_0_24px_rgba(99,102,241,0.18)]">
+            <div className="relative">
+              <textarea
+                id="chat-input"
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Ask anything about this video..."
+                rows={1}
+                disabled={isTyping}
+                className="w-full resize-none bg-transparent px-4 py-3.5 pr-16 text-[14px] text-white placeholder:text-[#7F89AD] focus:outline-none disabled:opacity-60"
+              />
+              <button
+                type="submit"
+                disabled={!input.trim() || isTyping}
+                className="absolute bottom-2 right-2.5 flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_16px_rgba(99,102,241,0.55)] transition-all duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+              >
+                <Send className="size-4" />
+              </button>
+            </div>
 
-        
-          <div className="mt-2 grid grid-cols-2 gap-2 md:hidden">
-            <button
-              type="button"
-              onClick={() => {
-                const iframe = document.querySelector("iframe[title]");
-                iframe?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }}
-              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#0C1426]/80 px-3 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:border-blue-400/30 hover:text-white"
-            >
-              <ImageIcon className="size-4 text-blue-300" />
-              Screenshot
-            </button>
-            <button
-              type="button"
-              onClick={onClearChat}
-              disabled={messages.length === 0 || !onClearChat}
-              className="flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-[#0C1426]/80 px-3 py-2.5 text-xs font-medium text-slate-300 transition-colors hover:border-red-500/30 hover:text-red-300 disabled:opacity-40"
-            >
-              <Trash2 className="size-4 text-slate-400" />
-              Clear Chat
-            </button>
+            {/* Mobile actions (inside the input card, separated by a divider) */}
+            <div className="flex items-center justify-end gap-2 border-t border-white/[0.06] px-3 py-2 md:hidden">
+              <button
+                type="button"
+                onClick={() => {
+                  const iframe = document.querySelector("iframe[title]");
+                  iframe?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+                className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#0D1736] px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-indigo-400/40 hover:text-white"
+              >
+                <ImageIcon className="size-4 text-slate-300" />
+                Screenshot
+              </button>
+              <button
+                type="button"
+                onClick={onClearChat}
+                disabled={messages.length === 0 || !onClearChat}
+                className="flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-[#0D1736] px-3 py-1.5 text-xs font-medium text-slate-200 transition-colors hover:border-red-500/40 hover:text-red-300 disabled:opacity-40"
+              >
+                <Trash2 className="size-4 text-slate-300" />
+                Clear Chat
+              </button>
+            </div>
           </div>
 
           <div className="mt-2 hidden items-center justify-between md:flex">
-            <p className="text-[10px] text-slate-500 ml-1">
+            <p className="ml-1 text-[10px] text-[#7F89AD]">
               AI can make mistakes. Verify important information.
             </p>
             {messages.length > 0 && onClearChat && (
               <button
                 type="button"
                 onClick={onClearChat}
-                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-slate-400 transition-colors hover:bg-slate-800/60 hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400/50"
+                className="inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs text-[#7F89AD] transition-colors hover:bg-white/[0.05] hover:text-slate-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50"
               >
                 <Trash2 className="size-3.5" />
                 Clear Chat

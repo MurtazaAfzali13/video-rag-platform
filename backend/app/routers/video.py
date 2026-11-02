@@ -116,9 +116,6 @@ async def _ingest_new_video(video_id: str, user_id: str, settings, is_admin: boo
     if not transcript:
         raise HTTPException(status_code=422, detail="زیرنویس این ویدیو قابل پردازش نیست.")
 
-    # Length guard for non-admin users: no extra YouTube call, derived from the transcript itself.
-    # Raised before any embedding cost; the caller's except-block marks the video as failed,
-    # so the single-flight lock is released and an admin can still index it later.
     if not is_admin:
         total_duration_seconds = _transcript_duration_seconds(transcript)
         if total_duration_seconds > MAX_FREE_VIDEO_SECONDS:
@@ -238,15 +235,12 @@ async def process_video(
 
         outcome, video = await _get_or_build_video(video_id, user_id, settings, auth.is_admin)
 
-        # Length guard for cached videos (e.g. a long video indexed earlier by an admin):
-        # without this, a normal user could bypass the limit via a cache hit / wait.
-        # Done BEFORE linking, so no access is granted.
+       
         if not auth.is_admin and outcome != "miss":
             stored_seconds = _stored_duration_seconds(video.get("transcript_lines") or [])
             if stored_seconds is not None and stored_seconds > MAX_FREE_VIDEO_SECONDS:
                 raise HTTPException(status_code=403, detail=DURATION_LIMIT_DETAIL)
-
-        # Link this user to the (shared) indexed video: this is what grants access.
+            
         await asyncio.to_thread(link_user_video, user_id, video_id)
 
         target_chat_id = request.chat_id

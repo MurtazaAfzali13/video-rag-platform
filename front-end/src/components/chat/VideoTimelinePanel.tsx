@@ -24,6 +24,16 @@ import { useVideo } from "@/context/VideoContext";
 import { bindVideoToChat } from "@/lib/chat-api";
 import { extractYouTubeId, parseTimestampToSeconds, cn } from "@/lib/utils";
 
+/*
+ * Color tokens (from the reference screenshot)
+ * Panel bg        : #060B1E -> #040616
+ * Card / tabs bg  : #0A1230   border #1B2757
+ * Play circle     : #1E2A6B (idle)  #7C5CF6 (active)
+ * Time / accent   : #A78BFA (violet)
+ * Active row      : border #7C5CF6, bg #1B1F5E/40
+ * Title text      : #EEF1FA   Muted text: #8590B5
+ */
+
 export function VideoTimelinePanel({
   chatId,
   userId,
@@ -180,13 +190,13 @@ export function VideoTimelinePanel({
   const renderEmptyState = () => (
     <div className="flex flex-col items-center justify-center h-full text-center py-12">
       <div className="relative mb-4">
-        <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-2xl" />
-        <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-400/20">
-          <Clock className="size-7 text-blue-300/60" />
+        <div className="absolute inset-0 rounded-full bg-indigo-500/20 blur-2xl" />
+        <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6366F1]/20 to-[#7C5CF6]/10 border border-indigo-400/20">
+          <Clock className="size-7 text-violet-300/70" />
         </div>
       </div>
-      <p className="text-slate-400 text-sm font-medium">No chapters yet</p>
-      <p className="text-slate-500 text-xs mt-1.5 max-w-[200px]">
+      <p className="text-[#8590B5] text-sm font-medium">No chapters yet</p>
+      <p className="text-[#5E688C] text-xs mt-1.5 max-w-[200px]">
         Ask questions about the video to see timestamps here
       </p>
     </div>
@@ -197,17 +207,17 @@ export function VideoTimelinePanel({
   return (
     <section
       className={cn(
-        "relative flex flex-col overflow-hidden bg-[#0A0D18] transition-all duration-300",
+        "relative flex flex-col overflow-hidden bg-gradient-to-b from-[#060B1E] to-[#040616] transition-all duration-300",
         isFullscreen
           ? "fixed inset-0 z-50 h-full w-full"
-          : "h-auto md:h-full md:max-h-screen md:min-w-[400px] md:flex-1 md:border-r md:border-white/[0.06]"
+          : "h-auto md:h-full md:max-h-screen md:min-w-[400px] md:flex-1 md:border-r md:border-[#1B2757]/60"
       )}
     >
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-blue-500/5 via-transparent to-transparent" />
+      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_0%,rgba(79,70,229,0.12),transparent_45%)]" />
 
       {/* Video Player */}
       <div className="shrink-0 p-0 md:p-5 md:pb-3 z-10">
-        <div className="relative overflow-hidden md:rounded-2xl border-0 md:border border-white/[0.08] bg-black/60 shadow-2xl shadow-blue-400/5 group">
+        <div className="relative overflow-hidden md:rounded-2xl border-0 md:border border-[#1B2757]/80 bg-black shadow-[0_0_40px_rgba(79,70,229,0.10)] group">
           <div className="relative aspect-video w-full">
             {currentVideoId ? (
               <iframe
@@ -220,16 +230,16 @@ export function VideoTimelinePanel({
                 allowFullScreen
               />
             ) : (
-              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#0C1426] text-center px-6">
+              <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-[#0A1230] text-center px-6">
                 <div className="relative">
-                  <div className="absolute inset-0 rounded-full bg-blue-500/20 blur-2xl" />
-                  <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500/20 to-blue-600/10 border border-blue-400/20">
-                    <Youtube className="size-8 text-blue-300/60" />
+                  <div className="absolute inset-0 rounded-full bg-indigo-500/20 blur-2xl" />
+                  <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-[#6366F1]/20 to-[#7C5CF6]/10 border border-indigo-400/20">
+                    <Youtube className="size-8 text-violet-300/70" />
                   </div>
                 </div>
                 <div>
-                  <p className="text-sm font-medium text-slate-300">No video loaded</p>
-                  <p className="text-xs text-slate-500 mt-1">
+                  <p className="text-sm font-medium text-[#EEF1FA]">No video loaded</p>
+                  <p className="text-xs text-[#8590B5] mt-1">
                     Paste a YouTube URL to start analyzing
                   </p>
                 </div>
@@ -252,7 +262,7 @@ export function VideoTimelinePanel({
        
         <div className="mt-3 flex items-center justify-between gap-2 px-4 md:hidden">
           <div className="min-w-0 flex-1">
-            <h2 className="truncate text-[13px] font-medium text-slate-300">{videoTitle}</h2>
+            <h2 className="truncate text-[13px] font-medium text-[#EEF1FA]">{videoTitle}</h2>
           </div>
           <button
             type="button"
@@ -262,8 +272,8 @@ export function VideoTimelinePanel({
             className={cn(
               "flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-all duration-200 active:scale-95",
               showMobileTimeline
-                ? "border-blue-400/60 bg-gradient-to-r from-blue-500/30 to-blue-600/20 text-blue-200 shadow-sm shadow-blue-400/20"
-                : "border-white/10 bg-white/5 text-slate-300"
+                ? "border-violet-400/60 bg-gradient-to-r from-[#5B4FE9]/35 to-[#7C5CF6]/20 text-violet-200 shadow-[0_0_14px_rgba(124,92,246,0.25)]"
+                : "border-[#1B2757] bg-[#0A1230] text-[#B4BCD8]"
             )}
           >
             <Clock className="size-3.5" />
@@ -284,16 +294,16 @@ export function VideoTimelinePanel({
             <h2 className="text-base font-semibold text-white truncate tracking-tight">
               {videoTitle}
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5 flex items-center gap-2">
+            <p className="text-xs text-[#8590B5] mt-0.5 flex items-center gap-2">
               <Clock className="size-3" />
               <span>{timelineItems.length} chapters</span>
-              <span className="w-1 h-1 rounded-full bg-slate-600" />
+              <span className="w-1 h-1 rounded-full bg-[#3A4670]" />
               <span>{transcriptLines.length} highlights</span>
             </p>
           </div>
           <button
             onClick={() => setShowUrlInput(!showUrlInput)}
-            className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-xs font-medium flex items-center gap-2 transition-all duration-200 shadow-lg shadow-blue-400/20 hover:shadow-blue-400/30 active:scale-95"
+            className="shrink-0 px-4 py-2.5 rounded-xl bg-gradient-to-br from-[#5B4FE9] to-[#7C5CF6] hover:brightness-110 text-white text-xs font-medium flex items-center gap-2 transition-all duration-200 shadow-[0_0_16px_rgba(99,102,241,0.45)] active:scale-95"
           >
             <Languages className="size-3.5" />
             New Video
@@ -302,9 +312,9 @@ export function VideoTimelinePanel({
 
         {showUrlInput && (
           <div className="mt-3 hidden animate-in fade-in slide-in-from-top-2 duration-200 md:block">
-            <div className="relative bg-white/5 backdrop-blur-sm rounded-xl border border-white/10 p-4 space-y-3">
+            <div className="relative bg-[#0A1230]/80 backdrop-blur-sm rounded-xl border border-[#1B2757] p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <label className="text-xs font-medium text-blue-300 flex items-center gap-2">
+                <label className="text-xs font-medium text-violet-300 flex items-center gap-2">
                   <Link className="size-3" />
                   YouTube Video URL
                 </label>
@@ -316,7 +326,7 @@ export function VideoTimelinePanel({
                   }}
                   className="p-1 rounded-md hover:bg-white/10 transition-colors"
                 >
-                  <X className="size-3.5 text-slate-400" />
+                  <X className="size-3.5 text-[#8590B5]" />
                 </button>
               </div>
 
@@ -327,7 +337,7 @@ export function VideoTimelinePanel({
                   value={videoUrl}
                   onChange={(e) => setVideoUrl(e.target.value)}
                   placeholder="https://www.youtube.com/watch?v=..."
-                  className="flex-1 bg-[#050816] border border-white/10 rounded-lg px-3.5 py-2.5 text-sm text-white placeholder:text-slate-500 focus:outline-none focus:border-blue-400/50 transition-colors"
+                  className="flex-1 bg-[#050816] border border-[#1B2757] rounded-lg px-3.5 py-2.5 text-sm text-white placeholder:text-[#5E688C] focus:outline-none focus:border-violet-400/60 transition-colors"
                   onKeyDown={(e) => {
                     if (e.key === "Enter") handleProcessVideo();
                   }}
@@ -335,7 +345,7 @@ export function VideoTimelinePanel({
                 <button
                   onClick={handleProcessVideo}
                   disabled={isProcessing || isProcessingExt}
-                  className="px-4 py-2.5 rounded-lg bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-400 hover:to-blue-500 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-lg shadow-blue-400/20"
+                  className="px-4 py-2.5 rounded-lg bg-gradient-to-br from-[#5B4FE9] to-[#7C5CF6] hover:brightness-110 text-white text-sm font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-[0_0_16px_rgba(99,102,241,0.45)]"
                 >
                   {(isProcessing || isProcessingExt) ? (
                     <>
@@ -364,25 +374,28 @@ export function VideoTimelinePanel({
       >
         <div className="min-h-0 overflow-hidden md:flex md:flex-col">
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-5 pb-5 pt-1 md:pt-0">
-            <Tabs defaultValue="timeline" className="flex min-h-0 flex-1 flex-col">
-              <TabsList className="w-full shrink-0 bg-[#121626]/60 border border-white/5 rounded-xl p-1 gap-1">
+            <Tabs
+              defaultValue="timeline"
+              className="flex min-h-0 flex-1 flex-col rounded-2xl border border-[#1B2757]/70 bg-[#0A1230]/70 px-3 pt-2 shadow-[inset_0_1px_0_rgba(255,255,255,0.03)]"
+            >
+              <TabsList className="h-auto w-full shrink-0 justify-start gap-2 rounded-none border-b border-white/[0.07] bg-transparent p-0">
                 <TabsTrigger
                   value="timeline"
-                  className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-blue-500/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
+                  className="-mb-px gap-2 rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 py-2.5 text-[13px] font-medium text-[#8590B5] shadow-none transition-all duration-200 hover:text-slate-200 data-[state=active]:border-[#8B5CF6] data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                 >
                   <Clock className="size-3.5" />
                   Timeline
-                  <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
+                  <span className="ml-1 text-[10px] bg-white/[0.07] px-1.5 py-0.5 rounded text-[#B4BCD8]">
                     {timelineItems.length}
                   </span>
                 </TabsTrigger>
                 <TabsTrigger
                   value="transcript"
-                  className="flex-1 gap-2 text-xs font-medium data-[state=active]:bg-blue-500/90 data-[state=active]:text-white rounded-lg transition-all duration-200 text-slate-400 hover:text-slate-200"
+                  className="-mb-px gap-2 rounded-none border-0 border-b-2 border-transparent bg-transparent px-3 py-2.5 text-[13px] font-medium text-[#8590B5] shadow-none transition-all duration-200 hover:text-slate-200 data-[state=active]:border-[#8B5CF6] data-[state=active]:bg-transparent data-[state=active]:text-white data-[state=active]:shadow-none"
                 >
                   <FileText className="size-3.5" />
                   Highlights
-                  <span className="ml-1 text-[10px] bg-black/20 px-1.5 py-0.5 rounded text-white">
+                  <span className="ml-1 text-[10px] bg-white/[0.07] px-1.5 py-0.5 rounded text-[#B4BCD8]">
                     {transcriptLines.length}
                   </span>
                 </TabsTrigger>
@@ -390,30 +403,30 @@ export function VideoTimelinePanel({
 
               <TabsContent
                 value="timeline"
-                className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
+                className="mt-3 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
               >
                 {timelineItems.length === 0 ? (
                   renderEmptyState()
                 ) : (
-                  <ul className="space-y-1.5 pr-1 pb-4">
+                  <ul className="space-y-1 pr-2 pb-3">
                     {timelineItems.map((item) => (
                       <li key={item.id}>
                         <button
                           type="button"
                           onClick={() => handleTimelineClick(item)}
                           className={cn(
-                            "group w-full flex items-center gap-4 rounded-xl p-3.5 text-left transition-all duration-200 border",
+                            "group w-full flex items-center gap-4 rounded-xl p-3 text-left transition-all duration-200 border",
                             activeTimestampId === item.id
-                              ? "border-blue-500/70 bg-[#1e2a4d]/40 shadow-sm"
-                              : "border-transparent hover:bg-white/[0.03]"
+                              ? "border-[#7C5CF6] bg-[#1B1F5E]/40 shadow-[0_0_18px_rgba(124,92,246,0.22)]"
+                              : "border-transparent hover:bg-white/[0.035]"
                           )}
                         >
                           <div
                             className={cn(
                               "flex size-9 shrink-0 items-center justify-center rounded-full transition-all duration-300",
                               activeTimestampId === item.id
-                                ? "bg-[#60a5fa] text-white shadow-md shadow-blue-500/20"
-                                : "bg-[#16233f] text-[#3b82f6] group-hover:bg-[#60a5fa] group-hover:text-white"
+                                ? "bg-[#7C5CF6] text-white shadow-[0_0_14px_rgba(124,92,246,0.55)]"
+                                : "bg-[#1E2A6B]/80 text-[#A78BFA] group-hover:bg-[#6D4FE8] group-hover:text-white"
                             )}
                           >
                             <Play className={cn(
@@ -426,8 +439,8 @@ export function VideoTimelinePanel({
                             className={cn(
                               "font-mono text-[15px] tabular-nums tracking-wide shrink-0 min-w-[45px] transition-colors",
                               activeTimestampId === item.id
-                                ? "text-[#93c5fd] font-medium"
-                                : "text-[#60a5fa] group-hover:text-[#93c5fd]"
+                                ? "text-[#C4B5FD] font-medium"
+                                : "text-[#A78BFA] group-hover:text-[#C4B5FD]"
                             )}
                           >
                             {item.time}
@@ -435,12 +448,12 @@ export function VideoTimelinePanel({
 
                           <div className="flex-1 min-w-0 pr-2">
                            
-                            <h4 className="text-[14px] font-medium text-slate-200 group-hover:text-white transition-colors line-clamp-1 leading-snug">
+                            <h4 className="text-[14px] font-medium text-[#EEF1FA] group-hover:text-white transition-colors line-clamp-1 leading-snug">
                               {item.title}
                             </h4>
 
                             {item.description && (
-                              <p className="text-[13px] text-slate-500 mt-1 line-clamp-1 group-hover:text-slate-400 transition-colors">
+                              <p className="text-[13px] text-[#8590B5] mt-1 line-clamp-1 group-hover:text-[#A5AECB] transition-colors">
                                 {item.description}
                               </p>
                             )}
@@ -454,25 +467,25 @@ export function VideoTimelinePanel({
 
               <TabsContent
                 value="transcript"
-                className="mt-4 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
+                className="mt-3 min-h-0 flex-1 overflow-y-auto custom-scrollbar focus-visible:outline-none"
               >
                 {transcriptLines.length === 0 ? (
                   renderEmptyState()
                 ) : (
-                  <div className="space-y-2 pr-1 pb-4">
+                  <div className="space-y-2 pr-2 pb-3">
                     {transcriptLines.map((line, idx) => (
                       <div
                         key={idx}
                         onClick={() => handleTranscriptClick(line)}
-                        className="group flex gap-4 p-3 rounded-xl transition-all duration-200 hover:bg-blue-500/10 cursor-pointer border border-transparent hover:border-blue-400/20"
+                        className="group flex gap-4 p-3 rounded-xl transition-all duration-200 hover:bg-[#1B1F5E]/30 cursor-pointer border border-transparent hover:border-[#7C5CF6]/40"
                       >
                         <div className="flex items-center gap-1.5 shrink-0">
-                          <Hash className="size-3 text-[#60a5fa]/60" />
-                          <span className="font-mono text-xs text-[#60a5fa] tabular-nums font-medium">
+                          <Hash className="size-3 text-[#A78BFA]/60" />
+                          <span className="font-mono text-xs text-[#A78BFA] tabular-nums font-medium">
                             {line.time}
                           </span>
                         </div>
-                        <p className="text-sm leading-relaxed text-slate-400 group-hover:text-slate-200 transition-colors">
+                        <p className="text-sm leading-relaxed text-[#8590B5] group-hover:text-[#EEF1FA] transition-colors">
                           {line.text}
                         </p>
                       </div>
@@ -487,17 +500,17 @@ export function VideoTimelinePanel({
 
       <style jsx>{`
         .custom-scrollbar::-webkit-scrollbar {
-          width: 4px;
+          width: 5px;
         }
         .custom-scrollbar::-webkit-scrollbar-track {
           background: transparent;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb {
-          background: rgba(59,130,246, 0.2);
+          background: rgba(148, 163, 184, 0.35);
           border-radius: 10px;
         }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-          background: rgba(59,130,246, 0.45);
+          background: rgba(167, 139, 250, 0.55);
         }
       `}</style>
     </section>
