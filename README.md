@@ -19,12 +19,25 @@
 
 ## 📑 Contents
 
+- [UI preview](#-ui-preview)
 - [Overview](#-overview)
 - [Graph](#-graph)
 - [Node reference](#-node-reference)
 - [Pre-graph: Single-Flight ingestion](#-0-single-flight-ingestion-engine)
 - [Node deep-dive](#-node-deep-dive)
 - [How `video_summary` differs](#-how-video_summary-differs)
+
+---
+
+## 🖼️ UI preview
+
+<div align="center">
+
+<img src="vidbrain-ui.png" alt="VidBrain UI: chat history, video timeline and AI assistant" width="100%" />
+
+<sub><b>Left:</b> chat history &nbsp;·&nbsp; <b>Center:</b> video player with clickable timeline &nbsp;·&nbsp; <b>Right:</b> AI assistant with timestamped answers</sub>
+
+</div>
 
 ---
 
