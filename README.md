@@ -1,96 +1,245 @@
-<!-- ============================================================ -->
-<!-- 🧠 Agentic Workflow Architecture & ⚡ Specialized AI Nodes    -->
-<!-- ============================================================ -->
+<div align="center">
 
-## 🧠 Agentic Workflow Architecture
+# 🧠 VidBrain — Agentic Workflow Architecture
 
-The core system is built on a **Single-Flight Deduplication** ingestion engine and a highly resilient **Small-to-Big** retrieval graph. Every query is resolved against conversational memory, routed, retrieved as precise micro-chunks, reranked, expanded to full continuous context, and strictly graded before generation — falling back to live web search only when local evidence is insufficient.
+**Single-Flight ingestion · Small-to-Big retrieval · Strict anti-hallucination grading**
+
+<p>
+  <img alt="LangGraph" src="https://img.shields.io/badge/LangGraph-Multi--Agent-7c3aed?style=for-the-badge&labelColor=1e1b4b" />
+  <img alt="Pinecone" src="https://img.shields.io/badge/Pinecone-Vector%20Search-5B4FE9?style=for-the-badge&labelColor=1e1b4b" />
+  <img alt="Postgres" src="https://img.shields.io/badge/Postgres%20%2F%20Supabase-Parent%20Chunks-a855f7?style=for-the-badge&labelColor=1e1b4b" />
+  <img alt="Tavily" src="https://img.shields.io/badge/Tavily-Web%20Fallback-22c55e?style=for-the-badge&labelColor=1e1b4b" />
+</p>
+
+<img src="langgraph-architecture.png" alt="VidBrain LangGraph architecture" width="520" />
+
+</div>
+
+---
+
+## 📑 Contents
+
+- [Overview](#-overview)
+- [Graph](#-graph)
+- [Node reference](#-node-reference)
+- [Pre-graph: Single-Flight ingestion](#-0-single-flight-ingestion-engine)
+- [Node deep-dive](#-node-deep-dive)
+- [How `video_summary` differs](#-how-video_summary-differs)
+
+---
+
+## ✨ Overview
+
+Every query is resolved against conversational memory, routed, retrieved as precise **micro-chunks**, reranked, expanded to full continuous context, and **strictly graded** before generation. Live web search is used **only** when local evidence is insufficient.
+
+| Stage | What it guarantees |
+| :-- | :-- |
+| 🚀 Ingestion | One expensive LLM/embedding run per video, even under viral traffic |
+| 🔍 Retrieval | Hyper-precise hits from small chunks, full context from parent passages |
+| ⚖️ Validation | No blended or hallucinated answers: bad evidence never reaches the generator |
+| ✍️ Generation | Every citation snapped to a real transcript timestamp |
+
+---
+
+## 🗺️ Graph
 
 ```mermaid
+%%{init: {'theme': 'base', 'themeVariables': {'fontFamily': 'Inter, Segoe UI, sans-serif', 'lineColor': '#7c3aed', 'edgeLabelBackground': '#ede9fe'}}}%%
 flowchart TD
     START(["▶ START"]) --> CTX
 
-    CTX["🧠 <b>contextualize</b><br/><span style='font-size:11px'>history-aware query rewrite</span>"]
+    CTX["🧠 <b>contextualize</b><br/><i>history-aware query rewrite</i>"]
     CTX --> SUP
 
-    SUP["🎯 <b>supervisor</b><br/><span style='font-size:11px'>route: qa vs summary vs scope</span>"]
+    SUP["🎯 <b>supervisor</b><br/><i>route: qa vs summary vs scope</i>"]
     SUP -. "video_summary" .-> VS
     SUP -. "video_qa / general_qa" .-> RET
 
-    RET["🔍 <b>retriever</b><br/><span style='font-size:11px'>Pinecone · child micro-chunks</span>"]
+    RET["🔍 <b>retriever</b><br/><i>Pinecone · child micro-chunks</i>"]
     RET --> RRK
 
-    RRK["📊 <b>reranker</b><br/><span style='font-size:11px'>cross-encoder → LLM fallback</span>"]
+    RRK["📊 <b>reranker</b><br/><i>cross-encoder → LLM fallback</i>"]
     RRK --> EXP
 
-    EXP["🗂️ <b>expander</b><br/><span style='font-size:11px'>Small-to-Big parent stitching</span>"]
+    EXP["🗂️ <b>expander</b><br/><i>Small-to-Big parent stitching</i>"]
     EXP --> VAL
 
-    VAL{"⚖️ <b>validator</b><br/><span style='font-size:11px'>strict relevance grading</span>"}
+    VAL{"⚖️ <b>validator</b><br/><i>strict relevance grading</i>"}
     VAL -- "insufficient evidence" --> WEB
     VAL -- "sufficient evidence" --> GEN
 
-    WEB["🌐 <b>web_search</b><br/><span style='font-size:11px'>Tavily · live fallback</span>"]
+    WEB["🌐 <b>web_search</b><br/><i>Tavily · live fallback</i>"]
     WEB --> GEN
 
-    GEN["✍️ <b>generator</b><br/><span style='font-size:11px'>strict grounded synthesis</span>"]
+    GEN["✍️ <b>generator</b><br/><i>strict grounded synthesis</i>"]
+    GEN --> FINISH
 
-    VS["📝 <b>video_summary</b><br/><span style='font-size:11px'>full-context evenly sampled</span>"]
+    VS["📝 <b>video_summary</b><br/><i>full-context evenly sampled</i>"]
+    VS --> FINISH
 
-    GEN --> END(["⏹ END"])
-    VS --> END
+    FINISH(["⏹ END"])
 
-    classDef node fill:#f3e8ff,stroke:#a855f7,stroke-width:1.5px,color:#3b0764,font-weight:600,rx:8,ry:8;
-    classDef decision fill:#ede9fe,stroke:#7c3aed,stroke-width:2px,color:#3b0764,font-weight:700;
-    classDef terminal fill:#a855f7,stroke:#6b21a8,stroke-width:2px,color:#ffffff,font-weight:700;
+    classDef node fill:#f3e8ff,stroke:#7c3aed,stroke-width:2px,color:#3b0764;
+    classDef decision fill:#ede9fe,stroke:#5B4FE9,stroke-width:3px,color:#3b0764;
+    classDef terminal fill:#7c3aed,stroke:#4c1d95,stroke-width:3px,color:#ffffff;
     class CTX,SUP,RET,RRK,EXP,WEB,GEN,VS node;
     class VAL decision;
-    class START,END terminal;
+    class START,FINISH terminal;
 
+    linkStyle 0,1,4,5,6 stroke:#7c3aed,stroke-width:2px;
+    linkStyle 2 stroke:#a855f7,stroke-width:2px;
+    linkStyle 3 stroke:#3b82f6,stroke-width:2px;
+    linkStyle 7,9 stroke:#ec4899,stroke-width:2px;
+    linkStyle 8 stroke:#22c55e,stroke-width:2px;
+    linkStyle 10,11 stroke:#7c3aed,stroke-width:2px;
+```
 
+> [!TIP]
+> **Legend:** 🟣 main flow · 🔵 Q&A route · 🟪 summary route · 🩷 fallback to web · 🟢 evidence accepted
 
+---
 
-⚠️ Note on video_summary: This node does not flow through the shared Pinecone retrieval pipeline. Instead of a vector similarity search, it fetches the entire video transcript (Parent chunks) directly from Postgres. To prevent Context Window Overflow on long videos, it applies an Even-Sampling Algorithm across the timeline, ensuring the final summary covers the beginning, middle, and end of the video comprehensively.
+## 🧩 Node reference
 
+| # | Node | Role | Key technique |
+| :-: | :-- | :-- | :-- |
+| 0 | 🚀 **Ingestion** *(pre-graph)* | Deduplicate viral video processing | Postgres lock · Single-Flight |
+| 1 | 🧠 **contextualize** | Standalone question from chat history | Sliding budget window · Pydantic output |
+| 2 | 🎯 **supervisor** | Pick the runtime path | `search_scope` routing |
+| 3 | 🔍 **retriever** | Fetch precise child chunks | Pinecone · 2-line windows · `k=24/40` |
+| 4 | 📊 **reranker** | Filter noise | `ms-marco-MiniLM-L-6-v2` → LLM fallback |
+| 5 | 🗂️ **expander** | Rebuild full context | Parent passages · edge stitching |
+| 6 | ⚖️ **validator** | Anti-hallucination guardrail | Strict binary grading |
+| 7 | 🌐 **web_search** | Live fallback | Tavily · exponential backoff |
+| 8 | ✍️ **generator** | Grounded answer + citations | Snap Tolerance (15 s) |
 
-    ⚡ Specialized AI & Pipeline Nodes
-🚀 0. Single-Flight Ingestion Engine — Viral Video Deduplication
-(Pre-Graph Pipeline) To handle viral or trending videos requested by hundreds of users simultaneously, the system employs a Distributed Lock & Single-Flight Request pattern.
+---
 
-When a video is requested, a deterministic Postgres lock (claim_video) ensures only the first user triggers the expensive LLM/Embedding ingestion.
+## 🚀 0. Single-Flight Ingestion Engine
 
-Concurrent requests enter a non-blocking wait_until_ready polling state.
+**Viral video deduplication** *(pre-graph pipeline)*
 
-Once processed, subsequent users experience a Cache Hit and are granted ACL access (link_user_video) via a join table. Zero duplicate vectors are stored, saving massive compute and storage costs.
+When hundreds of users request the same trending video at once, a **Distributed Lock & Single-Flight Request** pattern makes sure the expensive work happens exactly once.
 
-🧠 1. Contextualize / Query-Rewrite Node — Conversational Memory
-The entry point of the graph. Pulls the last 4 turns of chat history using a Sliding Budget Window (truncated to avoid token bloat) and resolves the raw user message into a standalone question. Guards against pronoun drift and utilizes strict Pydantic structured outputs to prevent conversational gaps.
+```text
+ user A ──► claim_video()  ──► wins the lock ──► LLM + embeddings ──► ready
+ user B ──► claim_video()  ──► lock taken ─────► wait_until_ready (non-blocking poll)
+ user C ──► cache hit ─────────────────────────► link_user_video (ACL via join table)
+```
 
-🎯 2. Supervisor & Router Node
-Determines the runtime path using the resolved query. Inspects search_scope and dictates whether the agent searches locally within a specific video boundary, globally across all collections, or routes straight to structured summarization.
+- 🔒 A deterministic Postgres lock (`claim_video`) lets only the **first** user trigger ingestion.
+- ⏳ Concurrent requests enter a non-blocking `wait_until_ready` polling state.
+- ⚡ Later users get a **cache hit** and are granted access through a join table (`link_user_video`).
+- 💰 **Zero duplicate vectors** are stored, which saves compute and storage.
 
-🔍 3. Pinecone Retriever Node — Small-to-Big (Phase 1)
-Instead of embedding large blocks of text, this node retrieves Child Micro-Chunks (overlapping 2-line sliding windows) from Pinecone. This ensures sub-linear, hyper-precise semantic hits without context dilution. The chunks are injected with a cheap contextual header (the video title) to resolve coreferences without LLM overhead. It intentionally over-fetches candidates (k=24 or 40) for the reranker.
+---
 
-📊 4. Reranker Node — Noise Filtering
-Scores every child chunk against the resolved query using a lightweight local cross-encoder (ms-marco-MiniLM-L-6-v2). Includes an Auto-Fallback Mechanism: if the server lacks RAM to load the local PyTorch model, it gracefully falls back to an LLM-based reranking chain. Trims the noise down to the top-N absolute best hits.
+## 🔬 Node deep-dive
 
-🗂️ 5. Parent Expander Node — Small-to-Big (Phase 2)
-The magic behind the system's high context accuracy. It takes the highly ranked child chunks and executes a single IN query against Supabase to fetch their corresponding Context-Rich Parent Passages (10-line blocks).
+<details>
+<summary><b>🧠 1. Contextualize — conversational memory</b></summary>
 
-Edge Stitching: If the exact answer sits at the boundary of a chunk, the algorithm automatically stitches lines from neighboring parents to prevent "Boundary Context Loss".
+<br>
 
-Precise UI Timestamps: While the LLM reads the large parent passage, the metadata timestamp remains locked to the micro-child's hit time, ensuring the frontend redirects the user to the exact second the answer appears in the video.
+The entry point of the graph.
 
-⚖️ 6. Content Validator (Evaluator) Node
-Acts as the anti-hallucination guardrail. Grades the expanded passages against the resolved query with a strict binary score. If the evidence is insufficient, it flags the graph state and routes away from local context entirely — preventing blended or hallucinated answers.
+- Pulls the **last 4 turns** of chat history using a **Sliding Budget Window** (truncated to avoid token bloat).
+- Resolves the raw message into a **standalone question**.
+- Guards against pronoun drift and uses strict **Pydantic structured outputs** to prevent conversational gaps.
 
-🌐 7. Tavily Web Search Fallback Node
-When local video assets fail validation, this node triggers a live web search wrapped in exponential-backoff retries. Feeds clean factual data back into the generator state and transparently flags the UI that the response was web-sourced.
+</details>
 
-✍️ 8. Generator Node — Strict Grounded Synthesis
-Synthesizes the final response using only the validated context.
+<details>
+<summary><b>🎯 2. Supervisor & Router</b></summary>
 
-Uses a Snap Tolerance algorithm: if the LLM hallucinates a timestamp that doesn't exist in the source transcript (or is off by >15 seconds), the citation is dynamically dropped or snapped to the true nearest marker.
+<br>
 
-Outputs a highly structured JSON containing chronological, clickable UI cards.
+Decides the runtime path from the resolved query. It inspects `search_scope` and chooses between:
+
+- 🎬 searching **locally** inside one video boundary,
+- 🌍 searching **globally** across all collections,
+- 📝 going straight to **structured summarization**.
+
+</details>
+
+<details>
+<summary><b>🔍 3. Pinecone Retriever — Small-to-Big, phase 1</b></summary>
+
+<br>
+
+- Retrieves **child micro-chunks** (overlapping 2-line sliding windows) instead of large text blocks, for sub-linear, hyper-precise semantic hits without context dilution.
+- Injects a cheap **contextual header** (the video title) to resolve coreferences with no LLM overhead.
+- Intentionally **over-fetches** candidates (`k=24` or `40`) for the reranker.
+
+</details>
+
+<details>
+<summary><b>📊 4. Reranker — noise filtering</b></summary>
+
+<br>
+
+- Scores every child chunk against the resolved query with a lightweight local cross-encoder (`ms-marco-MiniLM-L-6-v2`).
+- **Auto-fallback:** if the server lacks the RAM to load the PyTorch model, it falls back to an LLM-based reranking chain.
+- Trims the candidates down to the top-N best hits.
+
+</details>
+
+<details>
+<summary><b>🗂️ 5. Parent Expander — Small-to-Big, phase 2</b></summary>
+
+<br>
+
+Takes the top-ranked child chunks and runs a **single `IN` query** against Supabase to fetch their context-rich **parent passages** (10-line blocks).
+
+- 🧵 **Edge stitching:** if the answer sits on a chunk boundary, lines from neighboring parents are stitched in to prevent *boundary context loss*.
+- ⏱️ **Precise UI timestamps:** the LLM reads the large parent passage, but the metadata timestamp stays locked to the micro-child's hit time, so the frontend jumps to the exact second the answer appears.
+
+</details>
+
+<details>
+<summary><b>⚖️ 6. Content Validator — the guardrail</b></summary>
+
+<br>
+
+- Grades the expanded passages against the resolved query with a **strict binary score**.
+- If evidence is insufficient, it flags the graph state and routes **away from local context entirely**, which prevents blended or hallucinated answers.
+
+</details>
+
+<details>
+<summary><b>🌐 7. Tavily Web Search — fallback</b></summary>
+
+<br>
+
+- Triggered only when local assets fail validation.
+- Runs live web search wrapped in **exponential-backoff retries**.
+- Feeds clean factual data back into the generator state and transparently flags the UI that the response is **web-sourced**.
+
+</details>
+
+<details>
+<summary><b>✍️ 8. Generator — strict grounded synthesis</b></summary>
+
+<br>
+
+- Synthesizes the answer using **only validated context**.
+- **Snap Tolerance:** if the LLM invents a timestamp that doesn't exist in the transcript, or is off by more than **15 seconds**, the citation is dropped or snapped to the nearest real marker.
+- Outputs structured **JSON** containing chronological, clickable UI cards.
+
+</details>
+
+---
+
+## 📝 How `video_summary` differs
+
+> [!IMPORTANT]
+> The `video_summary` node does **not** use the shared Pinecone retrieval pipeline.
+
+Instead of a vector similarity search, it fetches the **entire transcript** (parent chunks) directly from Postgres. To avoid **context window overflow** on long videos, it applies an **even-sampling algorithm** across the timeline, so the summary covers the **beginning, middle, and end** of the video.
+
+```text
+ transcript:  |■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■■|
+ sampled:      ■   ■   ■   ■   ■   ■   ■   ■   ■   ■   ■
+               ▲                   ▲                   ▲
+             start               middle                end
+```
