@@ -125,7 +125,7 @@ def create_validator_chain() -> Any:
 
 
 #  for final answer or for generation node 
-def create_generator_chain() -> Any:
+def create_generator_chain() -> Any: 
     system_prompt = (
         "You are an expert educational assistant.\n"
         "{transparency_note}\n"

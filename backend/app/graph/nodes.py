@@ -36,14 +36,14 @@ from app.graph.retry_utils import invoke_with_retry, call_with_retry, HTTP_RETRY
 logger = logging.getLogger(__name__)
 
 
-CHILD_K_SINGLE_VIDEO = 24        # small chunks are cheap -> over-retrieve, rerank later
+CHILD_K_SINGLE_VIDEO = 24       
 CHILD_K_GENERAL = 40
-MAX_RERANK_TOP_N = 8             # child chunks kept after reranking
-MAX_PARENTS_SINGLE_VIDEO = 4     # parents (~2300 chars each) handed to validator/generator
+MAX_RERANK_TOP_N = 8            
+MAX_PARENTS_SINGLE_VIDEO = 4     
 MAX_PARENTS_GENERAL = 5
-STITCH_LINES = 2                 # lines borrowed from a neighbouring parent on edge hits
-SOURCE_SNAP_TOLERANCE_S = 15     # max distance between a cited time and a real marker
-MAX_VIDEO_SOURCES = 8            # cap on source cards shown for one answer
+STITCH_LINES = 2                
+SOURCE_SNAP_TOLERANCE_S = 15   
+MAX_VIDEO_SOURCES = 8          
 SUMMARY_CONTEXT_MAX_CHARS = 60_000
 DEFAULT_RERANKER_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
@@ -146,6 +146,8 @@ def contextualize_node(state: AgentState) -> dict[str, Any]:
     return {
         "standalone_query": standalone,
         "other_time_ms": state.get("other_time_ms", 0) + elapsed_ms,}
+    
+    
 
 # Analyze the user question and UI content to specify the next node 
 def supervisor_node(state: AgentState) -> dict[str, Any]:
