@@ -582,7 +582,7 @@ function ProductPreview() {
   }, [phase, node, s, sc.q.length, sc.a.length]);
 
   const showCites = phase === "answer" || phase === "hold";
-  const playhead = showCites ? sc.cites[0].p : 3;
+
 
   // 3D tilt
   const mx = useMotionValue(0);
@@ -630,7 +630,7 @@ function ProductPreview() {
 
         <div className="grid gap-5 p-4 md:grid-cols-5 md:p-5">
           <div className="md:col-span-3">
-            <VideoPane p={playhead} cites={sc.cites} showCites={showCites} />
+           <VideoPane cites={sc.cites} showCites={showCites} />
           </div>
           <div className="rounded-xl border border-white/5 bg-[#050B17]/70 p-3 md:col-span-2">
             <ChatPane s={s} phase={phase} node={node} />
