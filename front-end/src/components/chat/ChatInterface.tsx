@@ -5,19 +5,16 @@ import {
   Menu,
   Send,
   Sparkles,
-  Copy,
-  Check,
   RotateCcw,
   ThumbsUp,
   ThumbsDown,
   Trash2,
-  ArrowUpRight,
   MessageSquare,
   Info,
   ImageIcon,
   CheckCheck,
   Globe,
-  ExternalLink
+  ExternalLink,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useVideo } from "@/context/VideoContext";
@@ -26,6 +23,8 @@ import type { Message, Chat } from "@/types";
 import type { PipelineNode } from "@/lib/chat-api";
 import NodeProgressIndicator from "./NodeProgressIndicator";
 import PreflightIndicator from "./PreflightIndicator";
+import ChatMessageActions from "./ChatMessageActions";
+import { formatTimestamp, linkifyTimestamps, timestampToSeconds } from "./export/timestamps";
 
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -37,42 +36,25 @@ interface Props {
   isLoading: boolean;
   isTyping: boolean;
   currentNode?: PipelineNode | null;
-  onSendMessage: (content: string, type: QuestionType) => void; 
+  onSendMessage: (content: string, type: QuestionType) => void;
   onRegenerate?: () => void;
   onClearChat?: () => void;
 }
 type QuestionType = "general" | "about_video";
 
-/* ------------------------------------------------------------------ */
-/*  Design tokens (colors taken from the reference screenshot)         */
-/* ------------------------------------------------------------------ */
-// Page background  : #050A1E -> #040616
-// Assistant bubble : #0B1433 (border #1B2757)
-// User bubble      : #3A2D9F -> #4C3BC2 (border violet)
-// Accent / avatar  : #6366F1 -> #7C5CF6
-// Timestamp chip   : #12204A (border #26397A)
-// Primary text     : #EEF1FA   Muted text: #7F89AD
 
-function formatTimestamp(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-}
-
-function parseTimestampToSeconds(timeStr: string): number {
-  const parts = timeStr.split(':').map(Number);
-  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  return parts[0] * 60 + parts[1] || 0;
-}
 
 function extractTimestamps(text: string): string[] {
   const regex = /\[?\b(\d{1,2}:\d{2}(?::\d{2})?)\b\]?/g;
   const matches = [...text.matchAll(regex)];
-  return Array.from(new Set(matches.map(m => m[1])));
+  return Array.from(new Set(matches.map((m) => m[1])));
 }
 
 function removeTimestampsFromText(text: string): string {
-  return text.replace(/\[?\b\d{1,2}:\d{2}(?::\d{2})?\b\]?/g, '').replace(/\s{2,}/g, ' ').trim();
+  return text
+    .replace(/\[?\b\d{1,2}:\d{2}(?::\d{2})?\b\]?/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function safeHostname(url: string | undefined): string {
@@ -92,32 +74,47 @@ function formatMessageTime(iso: string): string {
   }
 }
 
-/**
- * Turns "[MM:SS]" / "[H:MM:SS]" citations written by the model into markdown links
- * ("[MM:SS](#t=<seconds>)") so they become clickable. Code spans/fences are left untouched,
- * existing links "[..](..)" and ranges like "[00:25-01:22]" are not matched.
- */
-function linkifyTimestamps(text: string): string {
-  return text
-    .split(/(```[\s\S]*?```|`[^`\n]*`)/g)
-    .map((part, i) =>
-      i % 2 === 1
-        ? part
-        : part.replace(
-            /\[(\d{1,3}):(\d{2})(?::(\d{2}))?\](?!\()/g,
-            (_m, a: string, b: string, c?: string) => {
-              const secs = c !== undefined ? +a * 3600 + +b * 60 + +c : +a * 60 + +b;
-              const label = c !== undefined ? `${a}:${b}:${c}` : `${a}:${b}`;
-              return `[${label}](#t=${secs})`;
-            }
-          )
-    )
-    .join("");
+
+type LooseRecord = Record<string, unknown>;
+const asRecord = (v: unknown): LooseRecord =>
+  typeof v === "object" && v !== null ? (v as LooseRecord) : {};
+
+/** Finds the YouTube URL (or builds it from a video id) on the chat object. */
+function resolveVideoUrl(chat: Chat | null): string | undefined {
+  if (!chat) return undefined;
+  const c = asRecord(chat);
+  const nested = asRecord(c.video);
+
+  for (const v of [c.video_url, c.youtube_url, c.videoUrl, c.url, nested.url, nested.video_url]) {
+    if (typeof v === "string" && /^https?:\/\//i.test(v)) return v;
+  }
+  for (const v of [c.video_id, c.youtube_id, c.videoId, nested.id, nested.video_id]) {
+    if (typeof v === "string" && /^[\w-]{11}$/.test(v)) {
+      return `https://www.youtube.com/watch?v=${v}`;
+    }
+  }
+  return undefined;
 }
 
-/* Shared class strings ------------------------------------------------ */
+/** Video title only. Never falls back to chat.title (that is the first, truncated question). */
+function resolveVideoTitle(chat: Chat | null): string | undefined {
+  if (!chat) return undefined;
+  const c = asRecord(chat);
+  const nested = asRecord(c.video);
+  for (const v of [c.video_title, c.videoTitle, nested.title]) {
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return undefined;
+}
 
-// Timestamp / source chip: filled #5B4FE9, rounded-lg, white text + external-link icon
+/** The nearest user message before the assistant message at `index`. */
+function findQuestion(messages: Message[], index: number): string | undefined {
+  for (let i = index - 1; i >= 0; i--) {
+    if (messages[i].role === "user") return messages[i].content;
+  }
+  return undefined;
+}
+
 const CHIP_CLASS =
   "group inline-flex items-center gap-2 rounded-lg border border-[#8B85FF]/40 bg-gradient-to-br from-[#5B4FE9] to-[#4B3FD8] px-3 py-1.5 text-[13px] font-medium text-white shadow-[0_0_16px_rgba(91,79,233,0.45)] transition-all duration-200 hover:border-[#B9B4FF]/70 hover:brightness-110 hover:shadow-[0_0_24px_rgba(91,79,233,0.70)] active:scale-95";
 
@@ -193,33 +190,12 @@ const TimestampPill = memo(function TimestampPill({
   return (
     <button
       type="button"
-      onClick={() => onClick(parseTimestampToSeconds(time))}
+      onClick={() => onClick(timestampToSeconds(time) ?? 0)}
       className={CHIP_CLASS}
       aria-label={`Jump to ${time}`}
     >
       <span className="shrink-0">{time}</span>
       <ExternalLink className="size-3.5 text-white/90 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-    </button>
-  );
-});
-
-const CopyButton = memo(function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-
-  const handleCopy = async () => {
-    await navigator.clipboard.writeText(text);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={handleCopy}
-      className="rounded-md p-1.5 text-[#7F89AD] transition-all duration-200 hover:bg-white/[0.06] hover:text-indigo-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400/50"
-      title="Copy response"
-    >
-      {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
     </button>
   );
 });
@@ -233,19 +209,18 @@ const AssistantContent = memo(function AssistantContent({
   isStreaming: boolean;
   onJumpToTime: (seconds: number) => void;
 }) {
-  
   let parsedContent: any = null;
   const trimmed = content.trim();
   if (trimmed.startsWith("{") && !isStreaming) {
     try {
       parsedContent = JSON.parse(trimmed);
     } catch (e) {
-  
+      // not JSON: render as markdown below
     }
   }
-  if (parsedContent && (parsedContent.type === 'video_summary' || parsedContent.key_takeaways)) {
+  if (parsedContent && (parsedContent.type === "video_summary" || parsedContent.key_takeaways)) {
     const takeaways = parsedContent.key_takeaways || [];
-    
+
     const groupedTakeaways = takeaways.reduce((acc: any, item: any) => {
       const time = item.timestamp || "general";
       if (!acc[time]) acc[time] = [];
@@ -259,7 +234,7 @@ const AssistantContent = memo(function AssistantContent({
           <Sparkles className="size-4" />
           <span className="font-medium">AI Video Summary</span>
         </div>
-        
+
         {parsedContent.overall_summary && (
           <p className="leading-[1.65] text-[#EEF1FA]">{parsedContent.overall_summary}</p>
         )}
@@ -267,7 +242,10 @@ const AssistantContent = memo(function AssistantContent({
         {Object.keys(groupedTakeaways).length > 0 && (
           <div className="mt-1 space-y-3">
             {Object.entries(groupedTakeaways).map(([time, points]: [string, any], i: number) => (
-              <div key={i} className="flex flex-col gap-2 rounded-xl border border-[#1B2757] bg-[#0E1A42]/70 p-3">
+              <div
+                key={i}
+                className="flex flex-col gap-2 rounded-xl border border-[#1B2757] bg-[#0E1A42]/70 p-3"
+              >
                 <ul className="space-y-1.5 text-[14px] leading-[1.65] text-[#EEF1FA]">
                   {points.map((point: string, idx: number) => (
                     <li key={idx} className="flex gap-2">
@@ -286,7 +264,7 @@ const AssistantContent = memo(function AssistantContent({
             ))}
           </div>
         )}
-        
+
         {parsedContent.academic_conclusion && (
           <div className="mt-2 border-t border-[#1B2757] pt-2 text-xs italic text-[#7F89AD]">
             {parsedContent.academic_conclusion}
@@ -296,7 +274,7 @@ const AssistantContent = memo(function AssistantContent({
     );
   }
 
-  if (parsedContent && parsedContent.type === 'qa_response') {
+  if (parsedContent && parsedContent.type === "qa_response") {
     return (
       <div className="flex w-full flex-col gap-3 text-[14px]">
         <div className={PROSE_CLASS}>
@@ -310,9 +288,7 @@ const AssistantContent = memo(function AssistantContent({
 
         {parsedContent.sources && parsedContent.sources.length > 0 && (
           <div className="mt-1">
-            <p className="mb-2.5 text-[13px] text-[#EEF1FA]">
-              Related timestamps:
-            </p>
+            <p className="mb-2.5 text-[13px] text-[#EEF1FA]">Related timestamps:</p>
             <div className="flex flex-wrap items-center gap-2.5">
               {parsedContent.sources.map((source: any, idx: number) => {
                 const key = `${source.source_type}-${source.start_time ?? source.url ?? idx}-${idx}`;
@@ -377,7 +353,7 @@ const AssistantContent = memo(function AssistantContent({
               ),
               p: ({ node, ...props }) => (
                 <p className="mb-2 last:mb-0 whitespace-pre-wrap inline" {...props} />
-              )
+              ),
             }}
           >
             {cleanContent}
@@ -394,9 +370,7 @@ const AssistantContent = memo(function AssistantContent({
 
       {timestamps.length > 0 && !isStreaming && (
         <div className="mt-1">
-          <p className="mb-2.5 text-[13px] text-[#EEF1FA]">
-            Related timestamps:
-          </p>
+          <p className="mb-2.5 text-[13px] text-[#EEF1FA]">Related timestamps:</p>
           <div className="flex flex-wrap items-center gap-2.5">
             {timestamps.map((timestamp, index) => (
               <TimestampPill
@@ -428,9 +402,13 @@ export default function ChatInterface({
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  
+
   const { jumpToTime, hydrateFromChat } = useVideo();
   const { toggle: toggleSidebar } = useSidebar();
+
+  const documentTitle = (chat as { title?: string } | null)?.title?.trim() || "Video Summary";
+  const videoTitle = resolveVideoTitle(chat);
+  const videoUrl = resolveVideoUrl(chat);
 
   const hydratedChatIdRef = useRef<string | null>(null);
   useEffect(() => {
@@ -440,7 +418,6 @@ export default function ChatInterface({
     hydrateFromChat(chat as any);
   }, [chat, hydrateFromChat]);
 
-  
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isTyping]);
@@ -460,7 +437,7 @@ export default function ChatInterface({
     e?.preventDefault();
     if (!input.trim() || isTyping) return;
 
-    onSendMessage(input.trim(), questionType); 
+    onSendMessage(input.trim(), questionType);
     setInput("");
   };
 
@@ -493,9 +470,7 @@ export default function ChatInterface({
             </button>
 
             <Sparkles className="size-[18px] shrink-0 text-[#A78BFA]" />
-            <h2 className="truncate text-[15px] font-medium text-white">
-              AI Assistant
-            </h2>
+            <h2 className="truncate text-[15px] font-medium text-white">AI Assistant</h2>
           </div>
 
           <div className="flex items-center gap-2">
@@ -512,11 +487,10 @@ export default function ChatInterface({
               <button
                 type="button"
                 onClick={() => setQuestionType("general")}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
-                  questionType === "general"
-                    ? "bg-gradient-to-r from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_14px_rgba(99,102,241,0.45)]"
-                    : "text-[#7F89AD] hover:text-slate-200"
-                }`}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "general"
+                  ? "bg-gradient-to-r from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_14px_rgba(99,102,241,0.45)]"
+                  : "text-[#7F89AD] hover:text-slate-200"
+                  }`}
               >
                 <Globe className="size-3.5" />
                 General
@@ -524,11 +498,10 @@ export default function ChatInterface({
               <button
                 type="button"
                 onClick={() => setQuestionType("about_video")}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${
-                  questionType === "about_video"
-                    ? "bg-gradient-to-r from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_14px_rgba(99,102,241,0.45)]"
-                    : "text-[#7F89AD] hover:text-slate-200"
-                }`}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs transition-all duration-200 sm:px-3 ${questionType === "about_video"
+                  ? "bg-gradient-to-r from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_14px_rgba(99,102,241,0.45)]"
+                  : "text-[#7F89AD] hover:text-slate-200"
+                  }`}
               >
                 About Video
               </button>
@@ -537,7 +510,7 @@ export default function ChatInterface({
         </div>
       </div>
 
-  
+      {/* Messages */}
       <div className="flex-1 overflow-y-auto px-4 py-6 [scrollbar-color:#1B2757_transparent] [scrollbar-width:thin]">
         <div className="mx-auto max-w-3xl space-y-5">
           {isLoading && messages.length === 0 ? (
@@ -611,7 +584,12 @@ export default function ChatInterface({
                       {/* Action buttons */}
                       {!isStreaming && msg.content && (
                         <div className="flex items-center justify-end gap-1 border-t border-[#1B2757]/70 px-4 py-2 opacity-100 transition-opacity duration-200 sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
-                          <CopyButton text={msg.content} />
+                          <ChatMessageActions
+                            content={msg.content}
+                            documentTitle={videoTitle}
+                            question={findQuestion(messages, index)}
+                            videoUrl={videoUrl}
+                          />
                           {isLast && onRegenerate && (
                             <button
                               type="button"
@@ -622,10 +600,18 @@ export default function ChatInterface({
                               <span className="hidden sm:inline">Regenerate</span>
                             </button>
                           )}
-                          <button type="button" className="rounded-md p-1.5 text-[#7F89AD] hover:bg-white/[0.06] hover:text-indigo-200">
+                          <button
+                            type="button"
+                            className="rounded-md p-1.5 text-[#7F89AD] hover:bg-white/[0.06] hover:text-indigo-200"
+                            aria-label="Good response"
+                          >
                             <ThumbsUp className="size-3.5" />
                           </button>
-                          <button type="button" className="rounded-md p-1.5 text-[#7F89AD] hover:bg-white/[0.06] hover:text-indigo-200">
+                          <button
+                            type="button"
+                            className="rounded-md p-1.5 text-[#7F89AD] hover:bg-white/[0.06] hover:text-indigo-200"
+                            aria-label="Bad response"
+                          >
                             <ThumbsDown className="size-3.5" />
                           </button>
                         </div>
@@ -635,17 +621,21 @@ export default function ChatInterface({
                 );
               })}
 
-            
-              {isTyping && messages.length > 0 && messages[messages.length - 1]?.role === "user" && (
-                <motion.div key="typing-indicator" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                 
-                  {currentNode ? (
-                    <NodeProgressIndicator currentNode={currentNode} />
-                  ) : (
-                    <PreflightIndicator />
-                  )}
-                </motion.div>
-              )}
+              {isTyping &&
+                messages.length > 0 &&
+                messages[messages.length - 1]?.role === "user" && (
+                  <motion.div
+                    key="typing-indicator"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                  >
+                    {currentNode ? (
+                      <NodeProgressIndicator currentNode={currentNode} />
+                    ) : (
+                      <PreflightIndicator />
+                    )}
+                  </motion.div>
+                )}
             </AnimatePresence>
           )}
           <div ref={messagesEndRef} />
@@ -672,6 +662,7 @@ export default function ChatInterface({
                 type="submit"
                 disabled={!input.trim() || isTyping}
                 className="absolute bottom-2 right-2.5 flex size-9 items-center justify-center rounded-xl bg-gradient-to-br from-[#5B4FE9] to-[#7C5CF6] text-white shadow-[0_0_16px_rgba(99,102,241,0.55)] transition-all duration-200 hover:brightness-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                aria-label="Send message"
               >
                 <Send className="size-4" />
               </button>
